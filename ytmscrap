@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# ytmscrap — YouTube Music playlist downloader for macOS and Git Bash on Windows.
+set -euo pipefail
+
+usage() {
+  cat <<'HELP'
+ytmscrap — YouTube Music -> FLAC
+
+Użycie:
+  ytmscrap                Pytania o folder i playlistę
+  ytmscrap "URL"          Pytanie o folder; URL podany jako argument
+  ytmscrap --check        Sprawdź wymagane narzędzia
+  ytmscrap --help         Pokaż pomoc
+
+Spotify -> YouTube Music: https://www.tunemymusic.com/
+HELP
+}
+
+check_tools() {
+  local missing=0 tool
+  for tool in yt-dlp ffmpeg deno; do
+    if command -v "$tool" >/dev/null 2>&1; then
+      printf '[OK] %s\n' "$tool"
+    else
+      printf '[BRAK] %s\n' "$tool" >&2
+      missing=1
+    fi
+  done
+  if [ "$missing" -ne 0 ]; then
+    printf '\nUruchom instalator: bash install.sh (w folderze repozytorium).\n' >&2
+    return 1
+  fi
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  --check) check_tools; exit $? ;;
+esac
+if [ "$#" -gt 1 ]; then
+  usage >&2
+  exit 2
+fi
+
+printf '\n=== ytmscrap | YouTube Music -> FLAC ===\n'
+printf 'Spotify -> YouTube Music: https://www.tunemymusic.com/\n\n'
+
+check_tools || exit 1
+printf '\n'
+
+if ! IFS= read -r -p 'Gdzie zapisać? (Enter lub ./ = bieżący katalog): ' output_dir; then
+  printf '\nAnulowano.\n'
+  exit 1
+fi
+output_dir=${output_dir:-.}
+
+# Windows drive paths work in Git Bash (C:\\Music, D:/DJ).
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    if [[ "$output_dir" =~ ^[A-Za-z]:[\\/] ]] && command -v cygpath >/dev/null 2>&1; then
+      output_dir=$(cygpath -u "$output_dir")
+    fi
+    ;;
+esac
+case "$output_dir" in
+  '~') output_dir=$HOME ;;
+  '~/'*) output_dir="$HOME/${output_dir#\~/}" ;;
+esac
+
+if ! mkdir -p -- "$output_dir"; then
+  printf 'Nie można utworzyć folderu: %s\n' "$output_dir" >&2
+  exit 1
+fi
+output_dir=$(cd -- "$output_dir" && pwd -P)
+
+playlist_url=${1:-}
+while [ -z "$playlist_url" ]; do
+  if ! IFS= read -r -p 'Link playlisty YouTube Music: ' playlist_url; then
+    printf '\nAnulowano.\n'
+    exit 1
+  fi
+done
+
+# Accept YouTube Music and ordinary YouTube playlist URLs, including extra query parameters.
+if [[ ! "$playlist_url" =~ ^https://(music\.youtube\.com|www\.youtube\.com|youtube\.com)/playlist\? ]] ||
+   [[ ! "$playlist_url" =~ [\?\&]list=[A-Za-z0-9_-]+ ]]; then
+  printf 'Niepoprawny link. Podaj adres playlisty YouTube Music lub YouTube.\n' >&2
+  exit 2
+fi
+
+printf '\nFolder: %s\n' "$output_dir"
+printf 'Format: FLAC (bez dodatkowej utraty jakości przy konwersji z YouTube)\n'
+printf 'Metadane: tagi i okładki\n'
+printf 'Nazwy: Wykonawca - Tytuł.flac (bez numeru playlisty)\n'
+printf 'Historia: %s/downloaded.txt\n\n' "$output_dir"
+
+if ! IFS= read -r -p 'Rozpocząć pobieranie? [T/n]: ' confirmation; then
+  printf '\nAnulowano.\n'
+  exit 1
+fi
+case "$confirmation" in
+  n|N|nie|Nie|NIE|no|No|NO) printf 'Anulowano.\n'; exit 0 ;;
+esac
+
+printf '\nPobieranie...\n\n'
+
+# --remote-components covers Homebrew/other builds missing bundled EJS scripts.
+# Always quote the URL and output path (also handles playlist URLs containing '&').
+if yt-dlp \
+  --yes-playlist \
+  --ignore-errors \
+  --remote-components ejs:github \
+  -f 'bestaudio' \
+  -x --audio-format flac \
+  --embed-metadata \
+  --embed-thumbnail \
+  --download-archive "$output_dir/downloaded.txt" \
+  -o '%(artist,uploader)s - %(track,title)s.%(ext)s' \
+  -P "$output_dir" \
+  "$playlist_url"; then
+  printf '\nZakończono. Pliki: %s\n' "$output_dir"
+  printf 'Uwaga: --ignore-errors pomija niedostępne utwory; sprawdź log powyżej.\n'
+else
+  printf '\nPobieranie przerwane — sprawdź błędy powyżej.\n' >&2
+  exit 1
+fi

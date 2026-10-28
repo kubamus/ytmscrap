@@ -1,0 +1,9 @@
+# Local downloads and yt-dlp state
+*.flac
+*.opus
+*.m4a
+*.mp3
+downloaded.txt
+*.part
+*.ytdl
+.DS_Store
