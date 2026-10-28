@@ -17,9 +17,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Offline CLI tests
-        run: bash tests/test-cli.sh
+        run: bash -x tests/test-cli.sh
       - name: Offline installer tests
-        run: bash tests/test-install.sh
+        run: bash -x tests/test-install.sh
   genre-tags:
     runs-on: ubuntu-latest
     steps:
