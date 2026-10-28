@@ -96,6 +96,20 @@ Aby **przenieść playlistę ze Spotify do YouTube Music**, skorzystaj z: **http
 - Zapisuje historię pobrań w folderze docelowym: `downloaded.txt` dla FLAC i `downloaded-wav.txt` dla WAV. Możesz pobrać obie wersje bez kasowania historii.
 - Działa na Windows (Git Bash) i macOS. `Deno` i skrypty EJS pomagają yt-dlp obsłużyć obecne wymagania YouTube.
 
+## Diagnostyka połączenia z API gatunków
+
+Gdy skrypt zgłasza błędy API (np. `URLError` na macOS), zaktualizuj instalację:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kubamus/ytmscrap/main/install.sh | bash -s -- kubamus/ytmscrap
+source ~/.zshrc
+ytmscrap --check-genres
+```
+
+Instalator konfiguruje `certifi` z aktualnymi certyfikatami HTTPS. Skrypt nadal **weryfikuje certyfikaty** (nie stosuje `verify=False`). Test wyświetla konkretny powód błędu: SSL, brak DNS, timeout lub kod HTTP. Jeśli występuje błąd certyfikatu także po aktualizacji, sprawdź certyfikaty proxy/VPN i ustawienia sieci; nie wyłączaj SSL.
+
+Nieudane zapytania sieciowe **nie trafiają do cache jako brak gatunku**. Stare puste wpisy są pomijane, więc po naprawie połączenia można od razu ponowić `ytmscrap --fix-genres .`. Jeśli oba serwisy są niedostępne, program przerwie skan zamiast błędnie oznaczać wszystkie utwory jako nierozpoznane.
+
 ## Automatyczne gatunki Genre
 
 Po pobraniu program pyta **„Automatycznie uzupełnić gatunki Genre?”**. Domyślnie próbuje naprawić gatunki w wybranym folderze. Bez pobierania utworów ponownie możesz użyć:
@@ -110,7 +124,7 @@ ytmscrap --fix-genres . --dry-run            # tylko pokaż propozycje
 - Sprawdza zgodność tytułu i wykonawcy. Nie zawsze znajdzie gatunek, zwłaszcza dla remixów, mashupów i mniej znanych polskich nagrań; zamiast zgadywać, pozostawia pole puste lub `Music`.
 - Zmienia wyłącznie `Genre` — i tylko jeśli tag jest pusty lub ma wartość `Music`. Nie nadpisuje pozostałych gatunków.
 - **FLAC**: zmienia tag Vorbis Comment bez ponownego kodowania audio; zachowuje okładkę. **WAV**: FFmpeg zapisuje `Genre` jako RIFF INFO/IGNR przez `-c:a copy`, czyli bez zmiany próbek audio; wymaga chwilowo miejsca na kopię pliku.
-- Wyniki zapytań zapisuje w `~/.cache/ytmscrap/genres-v1.json`. MusicBrainz ma limit **1 zapytanie na sekundę**, więc duże foldery mogą zająć kilka minut.
+- Wyniki udanych zapytań zapisuje w `~/.cache/ytmscrap/genres-v1.json`. MusicBrainz ma limit **1 zapytanie na sekundę**, więc duże foldery mogą zająć kilka minut.
 - Jeśli pole `Genre` nie odświeży się od razu w Rekordboxie, zaznacz utwory w **Collection** → **Reload Tag**. Przed użyciem tej opcji zwróć uwagę, że odświeża również inne tagi odczytane z pliku.
 
 Uwaga: przy instalacji starszej wersji ponownie uruchom instalator, żeby pobrać `genre_tagger.py`, Python i Mutagen.
@@ -118,6 +132,7 @@ Uwaga: przy instalacji starszej wersji ponownie uruchom instalator, żeby pobra�
 ## Przydatne komendy
 
 ```bash
+ytmscrap --check-genres    # test połączenia z MusicBrainz i Deezer
 ytmscrap --fix-genres .    # napraw gatunki w istniejących plikach
 ytmscrap --help        # pomoc
 ytmscrap --check       # sprawdzenie zależności
