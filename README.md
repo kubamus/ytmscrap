@@ -6,10 +6,10 @@ Proste CLI do pobierania **całych playlist z YouTube Music** do plików **FLAC*
 
 ## Instalacja
 
-**Najkrócej — po publikacji repozytorium** zastąp `TWOJ_LOGIN` swoim loginem GitHub i uruchom **jedną komendę** w Git Bash (Windows) lub Terminalu (macOS):
+**Najprościej:** uruchom **jedną komendę** w Git Bash (Windows) lub Terminalu (macOS):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TWOJ_LOGIN/ytmscrap/main/install.sh | bash -s -- TWOJ_LOGIN/ytmscrap
+curl -fsSL https://raw.githubusercontent.com/kubamus/ytmscrap/main/install.sh | bash -s -- kubamus/ytmscrap
 ```
 
 Polecenie pobierze skrypt z GitHuba i zainstaluje brakujące narzędzia. Ponieważ wykonuje kod z internetu, używaj tylko zaufanego repozytorium; możesz najpierw przejrzeć plik `install.sh`. Repo musi być publiczne i mieć gałąź `main`.
@@ -122,18 +122,15 @@ brew upgrade yt-dlp ffmpeg deno
 
 **Rekordbox** — użyj opcji Import w Rekordbox i wskaż folder FLAC. Jeśli wydanie utworu na YouTube ma błędne tagi, sprawdź je przed setem.
 
-## Opublikowanie na GitHubie
+## Kod źródłowy
 
-Jeśli pobrałeś ten projekt jako ZIP i chcesz założyć **własne publiczne repo**, zainstaluj [GitHub CLI](https://cli.github.com/), zaloguj się (`gh auth login`), a potem w folderze projektu wpisz:
+Publiczne repozytorium: **https://github.com/kubamus/ytmscrap**
 
 ```bash
-git init -b main
-git add .
-git commit -m "Initial release of ytmscrap"
-gh repo create ytmscrap --public --source=. --remote=origin --push
+git clone https://github.com/kubamus/ytmscrap.git
+cd ytmscrap
+bash install.sh
 ```
-
-Po publikacji **zamień `TWOJ_LOGIN` na nazwę właściciela repo** w komendzie instalacji u góry. Link będzie wtedy gotowy do skopiowania przez innych. Jeśli Twoja główna gałąź na GitHubie nie nazywa się `main`, zmień URL instalatora albo ustaw domyślną gałąź na `main`.
 
 ## Licencja
 
