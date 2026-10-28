@@ -200,8 +200,8 @@ if [ -x "$share_dir/venv/Scripts/python.exe" ]; then
 else
   venv_python="$share_dir/venv/bin/python"
 fi
-info 'Instalowanie Mutagen i certifi (certyfikaty HTTPS)'
-"$venv_python" -m pip install --disable-pip-version-check 'mutagen>=1.47,<2' 'certifi>=2025.1.31'
+info 'Instalowanie Mutagen, Pillow i certifi (certyfikaty HTTPS)'
+"$venv_python" -m pip install --disable-pip-version-check 'mutagen>=1.47,<2' 'certifi>=2025.1.31' 'Pillow>=10,<13'
 
 
 info 'Sprawdzanie zależności'
