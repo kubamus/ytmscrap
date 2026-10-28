@@ -96,23 +96,25 @@ while :; do
     printf '\nAnulowano.\n'
     exit 1
   fi
-  case "${format_choice,,}" in
-    1|wav) audio_format=wav; break ;;
-    ''|2|flac) audio_format=flac; break ;;
+  case "$format_choice" in
+    1|wav|WAV|Wav) audio_format=wav; break ;;
+    ''|2|flac|FLAC|Flac) audio_format=flac; break ;;
     *) printf 'Niepoprawny wybor. Wpisz 1 (WAV) lub 2 (FLAC).\n' >&2 ;;
   esac
 done
 
 if [ "$audio_format" = wav ]; then
+  format_label=WAV
   archive_file="$output_dir/downloaded-wav.txt"
   cover_note='osobny plik JPG (WAV nie obsluguje osadzania okladek w tym trybie)'
 else
+  format_label=FLAC
   archive_file="$output_dir/downloaded.txt"
   cover_note='okladka osadzona w FLAC'
 fi
 
 printf '\nFolder: %s\n' "$output_dir"
-printf 'Format: %s (bez dodatkowej stratnej kompresji)\n' "${audio_format^^}"
+printf 'Format: %s (bez dodatkowej stratnej kompresji)\n' "$format_label"
 printf 'Metadane: tagi; %s\n' "$cover_note"
 printf 'Nazwy: Wykonawca - Tytuł.%s (bez numeru playlisty)\n' "$audio_format"
 printf 'Historia: %s\n\n' "$archive_file"
