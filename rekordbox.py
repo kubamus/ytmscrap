@@ -121,21 +121,21 @@ def process(path, dry_run=False):
     if path.suffix.lower() == '.flac':
         if cover is None:
             return 'skip', 'brak okładki'
-        if dry_run:
-            changed, detail = add_cover(path, cover, dry_run=True)
-        else:
-            # Work on a copy so a failed tag write never damages the original.
-            fd, name = tempfile.mkstemp(prefix='.ytmscrap-', suffix='.flac', dir=path.parent)
-            os.close(fd)
-            temp = Path(name)
-            try:
-                shutil.copy2(path, temp)
-                changed, detail = add_cover(temp, cover)
-                if changed:
-                    os.replace(temp, path)
-            finally:
-                temp.unlink(missing_ok=True)
-        return ('updated' if changed else 'skip'), detail
+        changed, detail = add_cover(path, cover, dry_run=True)
+        if not changed or dry_run:
+            return ('updated' if changed else 'skip'), detail
+        # Copy only files needing changes, so repeated scans are fast.
+        # A failed tag write never damages the original.
+        fd, name = tempfile.mkstemp(prefix='.ytmscrap-', suffix='.flac', dir=path.parent)
+        os.close(fd)
+        temp = Path(name)
+        try:
+            shutil.copy2(path, temp)
+            add_cover(temp, cover)
+            os.replace(temp, path)
+        finally:
+            temp.unlink(missing_ok=True)
+        return 'updated', detail
 
     target = path.with_suffix('.flac')
     if target.exists():
