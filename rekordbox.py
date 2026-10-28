@@ -117,8 +117,8 @@ def square_picture(data):
         image.load()
     image, trimmed = _trim_black_bars(image)
     w, h = image.size
-    if not trimmed and w == h and (data.startswith(b'\\xff\\xd8\\xff') or data.startswith(b'\\x89PNG')):
-        mime = 'image/jpeg' if data.startswith(b'\\xff\\xd8\\xff') else 'image/png'
+    if not trimmed and w == h and (data.startswith(b'\xff\xd8\xff') or data.startswith(b'\x89PNG')):
+        mime = 'image/jpeg' if data.startswith(b'\xff\xd8\xff') else 'image/png'
         return data, mime, w, h
     side = min(w, h)
     image = image.crop(((w - side) // 2, (h - side) // 2,
