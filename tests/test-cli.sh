@@ -62,4 +62,16 @@ else
 fi
 [ ! -f "$tmp/args.txt" ] || { echo 'FAIL: yt-dlp invoked on cancel' >&2; exit 1; }
 
+# Opt-in applies only to new downloads (yt-dlp after_move manifest).
+rm -f "$tmp/args.txt"
+output_rb=$(printf '%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://music.youtube.com/playlist?list=PLQLDyACIOtUw' '2' '' | bash "$root/ytmscrap" --rekordbox 2>&1)
+grep -Fqx -- '--print-to-file' "$tmp/args.txt"
+grep -Fqx -- 'after_move:%(filepath)s' "$tmp/args.txt"
+[[ "$output_rb" == *'Brak nowych utworów'* ]]
+
+# The interactive prompt also enables the same mode.
+rm -f "$tmp/args.txt"
+printf '%s\n%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://music.youtube.com/playlist?list=PLQLDyACIOtUw' '2' '' 't' | bash "$root/ytmscrap" > /dev/null 2>&1
+grep -Fqx -- '--print-to-file' "$tmp/args.txt"
+
 printf 'PASS: WAV, FLAC, paths, metadata, thumbnails, archives, URL validation and cancel\n'

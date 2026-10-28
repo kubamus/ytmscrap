@@ -9,6 +9,8 @@ ytmscrap — YouTube Music -> WAV / FLAC
 Użycie:
   ytmscrap                Pytania o folder, playlistę i format
   ytmscrap "URL"          Pytanie o folder; URL podany jako argument
+  ytmscrap --rekordbox "URL"  Pobierz z przygotowaniem okładek do rekordbox
+  ytmscrap --fix-rekordbox [FOLDER] [--dry-run]  FLAC + kwadratowe okładki
   ytmscrap --fix-genres [FOLDER] [--dry-run]  Uzupełnij Genre w plikach FLAC/WAV
   ytmscrap --check-genres  Sprawdź połączenie z bazami gatunków
   ytmscrap --check        Sprawdź wymagane narzędzia
@@ -34,14 +36,16 @@ check_tools() {
   fi
 }
 
-genre_helper() {
-  local helper="$HOME/.local/share/ytmscrap/genre_tagger.py"
+python_helper() {
+  local script_name=$1
+  shift
+  local helper="$HOME/.local/share/ytmscrap/$script_name"
   local py=""
   if [ ! -f "$helper" ]; then
-    helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/genre_tagger.py"
+    helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/$script_name"
   fi
   if [ ! -f "$helper" ]; then
-    printf '[BŁĄD] Brak genre_tagger.py. Zaktualizuj ytmscrap instalatorem.\n' >&2
+    printf '[BŁĄD] Brak %s. Zaktualizuj ytmscrap instalatorem.\n' "$script_name" >&2
     return 2
   fi
   for candidate in "$HOME/.local/share/ytmscrap/venv/Scripts/python.exe" "$HOME/.local/share/ytmscrap/venv/bin/python3" "$HOME/.local/share/ytmscrap/venv/bin/python"; do
@@ -64,9 +68,15 @@ genre_helper() {
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
   --check) check_tools; exit $? ;;
-  --fix-genres) shift; genre_helper "$@"; exit $? ;;
-  --check-genres) genre_helper --check-network; exit $? ;;
+  --fix-genres) shift; python_helper genre_tagger.py "$@"; exit $? ;;
+  --check-genres) python_helper genre_tagger.py --check-network; exit $? ;;
+  --fix-rekordbox) shift; python_helper rekordbox.py "$@"; exit $? ;;
 esac
+download_rekordbox=ask
+if [ "${1:-}" = --rekordbox ]; then
+  download_rekordbox=yes
+  shift
+fi
 if [ "$#" -gt 1 ]; then
   usage >&2
   exit 2
@@ -158,6 +168,23 @@ case "$confirmation" in
   n|N|nie|Nie|NIE|no|No|NO) printf 'Anulowano.\n'; exit 0 ;;
 esac
 
+rekordbox_mode=0
+if [ "$download_rekordbox" = yes ]; then
+  rekordbox_mode=1
+else
+  printf '\nPrzygotować pliki dla rekordbox (FLAC + kwadratowe okładki 1:1)? [t/N]: '
+  if ! IFS= read -r rekordbox_answer; then rekordbox_answer=''; fi
+  case "$rekordbox_answer" in
+    t|T|tak|Tak|TAK|y|Y|yes|Yes|YES) rekordbox_mode=1 ;;
+  esac
+fi
+if [ "$rekordbox_mode" -eq 1 ]; then
+  printf 'Tryb rekordbox: FLAC z kwadratową okładką.\n'
+  if [ "$audio_format" = wav ]; then
+    printf 'WAV pozostanie bez zmian; powstanie obok niego wersja FLAC.\n'
+  fi
+fi
+
 printf '\nPobieranie...\n\n'
 
 # Separate archives let users get both WAV and FLAC from the same playlist.
@@ -179,17 +206,32 @@ yt_args+=(
   --download-archive "$archive_file"
   -o '%(artist,uploader)s - %(track,title)s.%(ext)s'
   -P "$output_dir"
-  "$playlist_url"
 )
+
+manifest=''
+if [ "$rekordbox_mode" -eq 1 ]; then
+  manifest=$(mktemp)
+  trap 'rm -f -- "$manifest"' EXIT
+  yt_args+=(--print-to-file 'after_move:%(filepath)s' "$manifest")
+fi
+yt_args+=("$playlist_url")
 
 if yt-dlp "${yt_args[@]}"; then
   printf '\nZakończono. Pliki: %s\n' "$output_dir"
   printf 'Uwaga: --ignore-errors pomija niedostępne utwory; sprawdź log powyżej.\n'
+  if [ "$rekordbox_mode" -eq 1 ]; then
+    if [ -s "$manifest" ]; then
+      python_helper rekordbox.py --from-list "$manifest" ||
+        printf '[UWAGA] Część plików nie została przygotowana dla rekordbox. Uruchom ytmscrap --fix-rekordbox.\n' >&2
+    else
+      printf '[Rekordbox] Brak nowych utworów (historia pobrań). Dla istniejących: ytmscrap --fix-rekordbox .\n'
+    fi
+  fi
   printf '\nAutomatycznie uzupełnić gatunki Genre? [T/n]: '
   if IFS= read -r fill_genres; then
     case "$fill_genres" in
       n|N|nie|Nie|NIE|no|No|NO) ;;
-      *) genre_helper "$output_dir" || printf '[UWAGA] Genre nie zostały w pełni uzupełnione. Pliki audio są zachowane.\n' >&2 ;;
+      *) python_helper genre_tagger.py "$output_dir" || printf '[UWAGA] Genre nie zostały w pełni uzupełnione. Pliki audio są zachowane.\n' >&2 ;;
     esac
   else
     printf '\n[INFO] Pomijam uzupełnianie gatunków (brak wejścia).\n'

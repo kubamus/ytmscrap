@@ -40,6 +40,7 @@ export YTMSCRAP_MOCK_UNAME=Darwin
 HOME="$tmp/home" bash "$root/install.sh" > "$tmp/mac.log"
 [ -x "$tmp/home/.local/bin/ytmscrap" ]
 [ -f "$tmp/home/.local/share/ytmscrap/genre_tagger.py" ]
+[ -f "$tmp/home/.local/share/ytmscrap/rekordbox.py" ]
 grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.zprofile"
 grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.zshrc"
 
@@ -69,6 +70,7 @@ while [ "$#" -gt 0 ]; do
     for arg in "$@"; do url="$arg"; done
     case "$url" in
       */genre_tagger.py) cp "$YTMSCRAP_REMOTE_HELPER" "$dest" ;;
+      */rekordbox.py) cp "$YTMSCRAP_REMOTE_REKORDBOX" "$dest" ;;
       */ytmscrap) cp "$YTMSCRAP_REMOTE_FIXTURE" "$dest" ;;
       *) exit 1 ;;
     esac
@@ -81,10 +83,12 @@ FAKE
 chmod +x "$tmp/bin/curl"
 export YTMSCRAP_REMOTE_FIXTURE="$root/ytmscrap"
 export YTMSCRAP_REMOTE_HELPER="$root/genre_tagger.py"
+export YTMSCRAP_REMOTE_REKORDBOX="$root/rekordbox.py"
 rm -f "$tmp/home/.local/bin/ytmscrap"
 HOME="$tmp/home" bash "$root/install.sh" demo-user/ytmscrap > "$tmp/remote.log"
 [ -x "$tmp/home/.local/bin/ytmscrap" ]
 grep -Fq 'publicznego repozytorium demo-user/ytmscrap' "$tmp/remote.log"
 head -n 1 "$tmp/home/.local/share/ytmscrap/genre_tagger.py" | grep -Fq '#!/usr/bin/env python3'
+head -n 1 "$tmp/home/.local/share/ytmscrap/rekordbox.py" | grep -Fq '#!/usr/bin/env python3'
 
 echo 'PASS: Windows/macOS local/remote install, Python helper, PATH and repeat setup' 
