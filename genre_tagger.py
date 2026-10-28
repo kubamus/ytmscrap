@@ -8,19 +8,26 @@ import os
 from pathlib import Path
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
 import time
 import unicodedata
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 try:
     from mutagen.flac import FLAC
 except ImportError:
     print("[BŁĄD] Brak Mutagen. Uruchom ponownie instalator.", file=sys.stderr)
+    raise SystemExit(2)
+
+try:
+    import certifi
+except ImportError:
+    print("[BŁĄD] Brak certifi (certyfikaty HTTPS). Uruchom ponownie instalator ytmscrap.", file=sys.stderr)
     raise SystemExit(2)
 
 AGENT = "ytmscrap/1.1 (https://github.com/kubamus/ytmscrap)"
@@ -102,8 +109,13 @@ class Lookup:
             self.cache = {}
         self.last_mb = 0
         self.dirty = False
+        self.failed_sources = set()
+        self.successful_sources = set()
+        self.request_failed = False
+        self.ssl_context = ssl.create_default_context(cafile=certifi.where())
 
     def request(self, url, mb=False):
+        host = urlparse(url).hostname or "nieznany serwer"
         if mb:
             remaining = 1.1 - (time.monotonic() - self.last_mb)
             if remaining > 0:
@@ -111,11 +123,26 @@ class Lookup:
             self.last_mb = time.monotonic()
         req = Request(url, headers={"User-Agent": AGENT, "Accept": "application/json"})
         try:
-            with urlopen(req, timeout=12) as response:
+            with urlopen(req, timeout=12, context=self.ssl_context) as response:
                 data = json.load(response)
-            return data if isinstance(data, dict) and not data.get("error") else {}
+            if not isinstance(data, dict):
+                raise ValueError("API zwróciło nieprawidłowy format danych")
+            if data.get("error"):
+                raise ValueError(f"API zwróciło błąd: {data['error']}")
+            self.successful_sources.add(host)
+            self.failed_sources.discard(host)
+            return data
         except (HTTPError, URLError, TimeoutError, ValueError) as error:
-            print(f"  [INFO] API niedostępne: {type(error).__name__}")
+            self.request_failed = True
+            self.failed_sources.add(host)
+            reason = error.reason if isinstance(error, URLError) else error
+            if isinstance(error, HTTPError):
+                detail = f"HTTP {error.code} {error.reason}"
+            else:
+                detail = str(reason)
+            print(f"  [BŁĄD API] {host}: {detail}", file=sys.stderr)
+            if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in detail:
+                print("  [POMOC] Problem z certyfikatem HTTPS. Zaktualizuj ytmscrap (instaluje certifi). Nie wyłączaj weryfikacji SSL.", file=sys.stderr)
             return {}
 
     def musicbrainz(self, artist, title):
@@ -162,15 +189,28 @@ class Lookup:
     def find(self, artist, title):
         key = norm(artist) + "|" + norm(title)
         entry = self.cache.get(key, {})
-        if entry and time.time() - entry.get("at", 0) < (60 if entry.get("genre") else 7) * 86400:
-            return entry.get("genre", ""), entry.get("source", "cache")
+        # Old versions cached network outages as empty genres for seven days.
+        # Ignore those negative entries so a fixed connection can retry immediately.
+        if entry.get("genre") and time.time() - entry.get("at", 0) < 60 * 86400:
+            return entry["genre"], entry.get("source", "cache")
+        self.request_failed = False
         genre = self.musicbrainz(artist, title)
         source = "MusicBrainz"
         if not genre:
             genre = self.deezer(artist, title)
             source = "Deezer"
-        self.cache[key] = {"genre": genre, "source": source, "at": time.time()}
-        self.dirty = True
+        if not genre and self.request_failed and not self.successful_sources and {
+            "musicbrainz.org", "api.deezer.com"
+        }.issubset(self.failed_sources):
+            raise ConnectionError(
+                "Nie można połączyć się z MusicBrainz ani Deezer. "
+                "Przerwano, aby nie sprawdzać setek plików bez dostępu do API. "
+                "Uruchom: ytmscrap --check-genres"
+            )
+        # Never save an empty genre after HTTP, DNS or SSL errors.
+        if genre or not self.request_failed:
+            self.cache[key] = {"genre": genre, "source": source, "at": time.time()}
+            self.dirty = True
         return genre, source
 
     def save(self):
@@ -184,7 +224,24 @@ def main():
     parser = argparse.ArgumentParser(description="Wyszukaj i zapisz brakujące gatunki dla Rekordbox")
     parser.add_argument("folder", nargs="?", default=".", help="Folder z WAV/FLAC")
     parser.add_argument("--dry-run", action="store_true", help="Pokaż gatunki bez zapisywania")
+    parser.add_argument("--check-network", action="store_true", help="Sprawdź połączenie z MusicBrainz i Deezer")
     args = parser.parse_args()
+    if args.check_network:
+        lookup = Lookup()
+        endpoints = [
+            ("MusicBrainz", "https://musicbrainz.org/ws/2/recording/?" + urlencode({"query": "artist:abba", "fmt": "json", "limit": 1}), True),
+            ("Deezer", "https://api.deezer.com/search/track?" + urlencode({"q": "abba", "limit": 1}), False),
+        ]
+        accessible = 0
+        for label, url, mb in endpoints:
+            lookup.request(url, mb=mb)
+            host = urlparse(url).hostname
+            if host in lookup.successful_sources:
+                accessible += 1
+                print(f"[OK] {label}: połączenie HTTPS działa")
+            else:
+                print(f"[BRAK] {label}: sprawdź błąd powyżej")
+        return 0 if accessible == len(endpoints) else 1
     folder = Path(args.folder).expanduser()
     if not folder.is_dir():
         print(f"[BŁĄD] Brak folderu: {folder}", file=sys.stderr)
@@ -220,6 +277,9 @@ def main():
     except KeyboardInterrupt:
         print("\nPrzerwano, dotychczasowe zmiany zachowano.")
         return 130
+    except ConnectionError as error:
+        print(f"[BŁĄD] {error}", file=sys.stderr)
+        return 2
     finally:
         lookup.save()
     print(f"[Genre] Uzupełnione: {updated}, już poprawne: {kept}, brak danych: {unknown}, błędy: {errors}.")
