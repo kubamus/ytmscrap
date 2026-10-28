@@ -4,10 +4,10 @@ set -euo pipefail
 
 usage() {
   cat <<'HELP'
-ytmscrap — YouTube Music -> FLAC
+ytmscrap — YouTube Music -> WAV / FLAC
 
 Użycie:
-  ytmscrap                Pytania o folder i playlistę
+  ytmscrap                Pytania o folder, playlistę i format
   ytmscrap "URL"          Pytanie o folder; URL podany jako argument
   ytmscrap --check        Sprawdź wymagane narzędzia
   ytmscrap --help         Pokaż pomoc
@@ -41,7 +41,7 @@ if [ "$#" -gt 1 ]; then
   exit 2
 fi
 
-printf '\n=== ytmscrap | YouTube Music -> FLAC ===\n'
+printf '\n=== ytmscrap | YouTube Music -> WAV / FLAC ===\n'
 printf 'Spotify -> YouTube Music: https://www.tunemymusic.com/\n\n'
 
 check_tools || exit 1
@@ -87,11 +87,35 @@ if [[ ! "$playlist_url" =~ ^https://(music\.youtube\.com|www\.youtube\.com|youtu
   exit 2
 fi
 
+# FLAC remains the default for existing users.
+printf '\nWybierz format audio:\n'
+printf '  1) WAV  - bez kompresji, wieksze pliki (jakosc zrodla YouTube)\n'
+printf '  2) FLAC - bezstratna kompresja, mniejsze pliki [domyslnie]\n'
+while :; do
+  if ! IFS= read -r -p 'Format [1/2] (Enter = FLAC): ' format_choice; then
+    printf '\nAnulowano.\n'
+    exit 1
+  fi
+  case "${format_choice,,}" in
+    1|wav) audio_format=wav; break ;;
+    ''|2|flac) audio_format=flac; break ;;
+    *) printf 'Niepoprawny wybor. Wpisz 1 (WAV) lub 2 (FLAC).\n' >&2 ;;
+  esac
+done
+
+if [ "$audio_format" = wav ]; then
+  archive_file="$output_dir/downloaded-wav.txt"
+  cover_note='osobny plik JPG (WAV nie obsluguje osadzania okladek w tym trybie)'
+else
+  archive_file="$output_dir/downloaded.txt"
+  cover_note='okladka osadzona w FLAC'
+fi
+
 printf '\nFolder: %s\n' "$output_dir"
-printf 'Format: FLAC (bez dodatkowej utraty jakości przy konwersji z YouTube)\n'
-printf 'Metadane: tagi i okładki\n'
-printf 'Nazwy: Wykonawca - Tytuł.flac (bez numeru playlisty)\n'
-printf 'Historia: %s/downloaded.txt\n\n' "$output_dir"
+printf 'Format: %s (bez dodatkowej stratnej kompresji)\n' "${audio_format^^}"
+printf 'Metadane: tagi; %s\n' "$cover_note"
+printf 'Nazwy: Wykonawca - Tytuł.%s (bez numeru playlisty)\n' "$audio_format"
+printf 'Historia: %s\n\n' "$archive_file"
 
 if ! IFS= read -r -p 'Rozpocząć pobieranie? [T/n]: ' confirmation; then
   printf '\nAnulowano.\n'
@@ -103,20 +127,29 @@ esac
 
 printf '\nPobieranie...\n\n'
 
-# --remote-components covers Homebrew/other builds missing bundled EJS scripts.
-# Always quote the URL and output path (also handles playlist URLs containing '&').
-if yt-dlp \
-  --yes-playlist \
-  --ignore-errors \
-  --remote-components ejs:github \
-  -f 'bestaudio' \
-  -x --audio-format flac \
-  --embed-metadata \
-  --embed-thumbnail \
-  --download-archive "$output_dir/downloaded.txt" \
-  -o '%(artist,uploader)s - %(track,title)s.%(ext)s' \
-  -P "$output_dir" \
-  "$playlist_url"; then
+# Separate archives let users get both WAV and FLAC from the same playlist.
+# WAV gets a JPG beside the audio: FFmpeg's WAV muxer cannot embed cover art.
+yt_args=(
+  --yes-playlist
+  --ignore-errors
+  --remote-components ejs:github
+  -f bestaudio
+  -x --audio-format "$audio_format"
+  --embed-metadata
+)
+if [ "$audio_format" = flac ]; then
+  yt_args+=(--embed-thumbnail)
+else
+  yt_args+=(--write-thumbnail --convert-thumbnails jpg)
+fi
+yt_args+=(
+  --download-archive "$archive_file"
+  -o '%(artist,uploader)s - %(track,title)s.%(ext)s'
+  -P "$output_dir"
+  "$playlist_url"
+)
+
+if yt-dlp "${yt_args[@]}"; then
   printf '\nZakończono. Pliki: %s\n' "$output_dir"
   printf 'Uwaga: --ignore-errors pomija niedostępne utwory; sprawdź log powyżej.\n'
 else
