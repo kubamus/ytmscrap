@@ -9,6 +9,7 @@ info() { printf '\n==> %s\n' "$*"; }
 remote_repo=${1:-}
 tmp_script=''
 tmp_helper=''
+tmp_rekordbox=''
 if [ -n "$remote_repo" ]; then
   if [[ ! "$remote_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
     err 'Repozytorium powinno mieć postać OWNER/REPO.'
@@ -17,18 +18,22 @@ if [ -n "$remote_repo" ]; then
   command -v curl >/dev/null 2>&1 || { err 'Brak curl.'; exit 1; }
   tmp_script=$(mktemp)
   tmp_helper=$(mktemp)
-  trap 'rm -f "$tmp_script" "$tmp_helper"' EXIT
+  tmp_rekordbox=$(mktemp)
+  trap 'rm -f "$tmp_script" "$tmp_helper" "$tmp_rekordbox"' EXIT
   info "Pobieranie CLI z publicznego repozytorium $remote_repo"
   curl -fL --retry 2 --output "$tmp_script" "https://raw.githubusercontent.com/$remote_repo/main/ytmscrap"
   script_source=$tmp_script
   curl -fL --retry 2 --output "$tmp_helper" "https://raw.githubusercontent.com/$remote_repo/main/genre_tagger.py"
   helper_source=$tmp_helper
+  curl -fL --retry 2 --output "$tmp_rekordbox" "https://raw.githubusercontent.com/$remote_repo/main/rekordbox.py"
+  rekordbox_source=$tmp_rekordbox
 else
   base_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
   script_source="$base_dir/ytmscrap"
   helper_source="$base_dir/genre_tagger.py"
-  if [ ! -f "$script_source" ] || [ ! -f "$helper_source" ]; then
-    err 'Brak ytmscrap lub genre_tagger.py obok install.sh. Pobierz całe repozytorium lub użyj trybu OWNER/REPO.'
+  rekordbox_source="$base_dir/rekordbox.py"
+  if [ ! -f "$script_source" ] || [ ! -f "$helper_source" ] || [ ! -f "$rekordbox_source" ]; then
+    err 'Brak ytmscrap, genre_tagger.py lub rekordbox.py obok install.sh. Pobierz całe repozytorium lub użyj trybu OWNER/REPO.'
     exit 1
   fi
 fi
@@ -185,6 +190,7 @@ fi
 share_dir="$HOME/.local/share/ytmscrap"
 mkdir -p -- "$share_dir"
 cp -- "$helper_source" "$share_dir/genre_tagger.py"
+cp -- "$rekordbox_source" "$share_dir/rekordbox.py"
 if [ ! -x "$share_dir/venv/bin/python" ] && [ ! -x "$share_dir/venv/Scripts/python.exe" ]; then
   info 'Tworzenie środowiska Python'
   "$python_exec" -m venv "$share_dir/venv"
