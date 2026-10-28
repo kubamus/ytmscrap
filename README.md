@@ -1,8 +1,8 @@
 # ytmscrap
 
-Proste CLI do pobierania **całych playlist z YouTube Music** do plików **FLAC** z metadanymi i okładkami, gotowych do importu w Rekordbox. Działa w **Git Bash na Windows 10/11** i w terminalu **macOS**.
+Proste CLI do pobierania **całych playlist z YouTube Music** do plików **WAV lub FLAC** z metadanymi i okładkami, gotowych do importu w Rekordbox. Działa w **Git Bash na Windows 10/11** i w terminalu **macOS**.
 
-> **Jakość:** YouTube Music dostarcza audio skompresowane stratnie. Konwersja do FLAC nie odzyskuje jakości lossless; zapobiega jednak **dalszej** stratnej kompresji. Pliki FLAC mogą być duże. Pobieraj tylko materiały, do których masz prawa lub zgodę.
+> **Jakość:** YouTube Music dostarcza audio skompresowane stratnie (AAC/Opus). WAV i FLAC powstają z tego samego źródła i **nie poprawiają jego jakości**. WAV zapisuje nieskompresowany PCM, a FLAC kompresuje bezstratnie, więc oba brzmią tak samo. WAV zajmuje zwykle więcej miejsca. Pobieraj tylko materiały, do których masz prawa lub zgodę.
 
 ## Instalacja
 
@@ -56,16 +56,21 @@ ytmscrap
 Przykładowe pytania:
 
 ```text
-=== ytmscrap | YouTube Music -> FLAC ===
+=== ytmscrap | YouTube Music -> WAV / FLAC ===
 Spotify -> YouTube Music: https://www.tunemymusic.com/
 
 Gdzie zapisać? (Enter lub ./ = bieżący katalog): ./DJ
 Link playlisty YouTube Music: https://music.youtube.com/playlist?list=PLQLDyACIOtUw
 
+Wybierz format audio:
+  1) WAV  - bez kompresji, wieksze pliki (jakosc zrodla YouTube)
+  2) FLAC - bezstratna kompresja, mniejsze pliki [domyslnie]
+Format [1/2] (Enter = FLAC): 1
+
 Folder: .../DJ
-Format: FLAC
-Metadane: tagi i okładki
-Nazwy: Wykonawca - Tytuł.flac (bez numeru playlisty)
+Format: WAV (bez dodatkowej stratnej kompresji)
+Metadane: tagi; osobny plik JPG
+Nazwy: Wykonawca - Tytuł.wav (bez numeru playlisty)
 
 Rozpocząć pobieranie? [T/n]: t
 ```
@@ -83,10 +88,10 @@ Aby **przenieść playlistę ze Spotify do YouTube Music**, skorzystaj z: **http
 ## Co robi program
 
 - Pobiera najlepszy strumień audio udostępniony `yt-dlp` z YouTube Music.
-- Konwertuje do FLAC za pomocą FFmpeg.
-- Dodaje dostępne metadane i okładkę (nie zawsze wszystkie tagi są poprawne — zależy od YouTube).
-- Nadaje nazwy `Artysta - Tytuł.flac`, bez numeru pozycji na playliście.
-- Zapisuje `downloaded.txt` **w folderze docelowym**, żeby nie pobierać ponownie wcześniej przetworzonych utworów.
+- Przed pobraniem pyta o WAV (nieskompresowany PCM) lub FLAC (bezstratna kompresja, domyślnie); konwertuje za pomocą FFmpeg.
+- FLAC: osadza dostępne tagi i okładkę w pliku. WAV: osadza dostępne tagi i zapisuje okładkę jako osobny JPG, ponieważ osadzanie grafiki w WAV nie jest obsługiwane w tym trybie. Część aplikacji może ignorować metadane WAV.
+- Nadaje nazwy `Artysta - Tytuł.wav` lub `Artysta - Tytuł.flac`, bez numeru pozycji na playliście.
+- Zapisuje historię pobrań w folderze docelowym: `downloaded.txt` dla FLAC i `downloaded-wav.txt` dla WAV. Możesz pobrać obie wersje bez kasowania historii.
 - Działa na Windows (Git Bash) i macOS. `Deno` i skrypty EJS pomagają yt-dlp obsłużyć obecne wymagania YouTube.
 
 ## Przydatne komendy
@@ -116,11 +121,11 @@ brew upgrade yt-dlp ffmpeg deno
 
 **`yt-dlp`/`ffmpeg`/`deno` nie znaleziono** — uruchom `ytmscrap --check`, sprawdź, czy `winget` lub Homebrew dodały programy do PATH, i ponów `bash install.sh`.
 
-**Brak starszych utworów przy ponownym pobieraniu** — plik `downloaded.txt` w folderze zapisu służy do pomijania już pobranych pozycji. Jeśli wcześniej pobrałeś pliki z numerami playlisty, skrypt ich automatycznie nie przemianuje. Usuń wpisy w archiwum lub zmień nazwy starych plików ręcznie, jeśli potrzebujesz pobrania ich od nowa.
+**Brak starszych utworów przy ponownym pobieraniu** — pliki `downloaded.txt` (FLAC) i `downloaded-wav.txt` (WAV) w folderze zapisu służą do pomijania już pobranych pozycji. Jeśli wcześniej pobrałeś pliki z numerami playlisty, skrypt ich automatycznie nie przemianuje. Usuń wpisy w archiwum lub zmień nazwy starych plików ręcznie, jeśli potrzebujesz pobrania ich od nowa.
 
-**FLAC a jakość dźwięku** — `ffprobe` pokaże FLAC o wysokim bitrate, ale to nie dowód na bezstratne źródło. YouTube Music nie daje strumienia lossless do pobrania przez yt-dlp.
+**WAV/FLAC a jakość dźwięku** — `ffprobe` może pokazać wysoki bitrate, ale to nie dowód na bezstratne źródło. YouTube Music nie daje oryginalnych WAV ani FLAC przez yt-dlp. Konwersja z AAC/Opus nie odzyskuje utraconych danych.
 
-**Rekordbox** — użyj opcji Import w Rekordbox i wskaż folder FLAC. Jeśli wydanie utworu na YouTube ma błędne tagi, sprawdź je przed setem.
+**Rekordbox** — importuj pliki WAV lub FLAC. FLAC ma lepszą obsługę osadzonych okładek i tagów; przy WAV obraz znajduje się obok pliku. Jeśli wydanie utworu na YouTube ma błędne tagi, sprawdź je przed setem.
 
 ## Kod źródłowy
 
