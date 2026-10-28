@@ -10,6 +10,7 @@ Użycie:
   ytmscrap                Pytania o folder, playlistę i format
   ytmscrap "URL"          Pytanie o folder; URL podany jako argument
   ytmscrap --fix-genres [FOLDER] [--dry-run]  Uzupełnij Genre w plikach FLAC/WAV
+  ytmscrap --check-genres  Sprawdź połączenie z bazami gatunków
   ytmscrap --check        Sprawdź wymagane narzędzia
   ytmscrap --help         Pokaż pomoc
 
@@ -64,6 +65,7 @@ case "${1:-}" in
   -h|--help) usage; exit 0 ;;
   --check) check_tools; exit $? ;;
   --fix-genres) shift; genre_helper "$@"; exit $? ;;
+  --check-genres) genre_helper --check-network; exit $? ;;
 esac
 if [ "$#" -gt 1 ]; then
   usage >&2
