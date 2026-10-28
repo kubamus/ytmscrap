@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from io import BytesIO
 from pathlib import Path
 import json
 import os
@@ -13,8 +14,9 @@ import tempfile
 
 try:
     from mutagen.flac import FLAC, Picture
+    from PIL import Image, ImageOps
 except ImportError:
-    print('[BŁĄD] Brak Mutagen. Uruchom ponownie instalator ytmscrap.', file=sys.stderr)
+    print('[BŁĄD] Brak Mutagen lub Pillow. Uruchom ponownie instalator ytmscrap.', file=sys.stderr)
     raise SystemExit(2)
 
 EXTENSIONS = {'.flac', '.wav', '.mp3', '.m4a', '.mp4', '.opus', '.ogg', '.aac', '.aiff', '.aif'}
@@ -60,18 +62,71 @@ def cover_details(data):
     return streams[0]['width'], streams[0]['height']
 
 
+def _trim_black_bars(image):
+    """Remove clear black bars on BOTH opposite sides, not dark artwork in general."""
+    preview = image.convert('RGB')
+    preview.thumbnail((240, 240))
+    w, h = preview.size
+    pixels = preview.load()
+
+    def lit(x, y):
+        r, g, b = pixels[x, y]
+        return max(r, g, b) > 30
+
+    def row_dark(y):
+        return sum(lit(x, y) for x in range(w)) <= max(1, int(w * .02))
+
+    top = 0
+    while top < h // 2 and row_dark(top):
+        top += 1
+    bottom = 0
+    while bottom < h // 2 and row_dark(h - 1 - bottom):
+        bottom += 1
+
+    def column_dark(x):
+        return sum(lit(x, y) for y in range(h)) <= max(1, int(h * .02))
+
+    left = 0
+    while left < w // 2 and column_dark(left):
+        left += 1
+    right = 0
+    while right < w // 2 and column_dark(w - 1 - right):
+        right += 1
+
+    # Only trim when both edges have a significant dark margin.
+    y1, y2 = (top, h - bottom) if top >= h * .08 and bottom >= h * .08 else (0, h)
+    x1, x2 = (left, w - right) if left >= w * .08 and right >= w * .08 else (0, w)
+    if (x1, y1, x2, y2) == (0, 0, w, h):
+        return image, False
+    if x2 <= x1 or y2 <= y1:
+        return image, False
+    interior = sum(lit(x, y) for y in range(y1, y2) for x in range(x1, x2))
+    if interior < (x2 - x1) * (y2 - y1) * .05:
+        return image, False
+    ow, oh = image.size
+    crop = (round(x1 * ow / w), round(y1 * oh / h),
+            round(x2 * ow / w), round(y2 * oh / h))
+    return image.crop(crop), True
+
+
 def square_picture(data):
-    w, h = cover_details(data)
-    # No loss from repeatedly running the command on an already square JPEG/PNG.
-    if w == h and (data.startswith(b'\xff\xd8\xff') or data.startswith(b'\x89PNG')):
+    # Inspect pixels, not just image dimensions: some YouTube thumbnails are
+    # already square but contain black letterboxing inside the actual JPG.
+    with Image.open(BytesIO(data)) as source:
+        image = ImageOps.exif_transpose(source)
+        image.load()
+    image, trimmed = _trim_black_bars(image)
+    w, h = image.size
+    if not trimmed and w == h and (data.startswith(b'\xff\xd8\xff') or data.startswith(b'\x89PNG')):
         mime = 'image/jpeg' if data.startswith(b'\xff\xd8\xff') else 'image/png'
         return data, mime, w, h
-    jpg = ffmpeg('-i', 'pipe:0', '-vf', 'crop=min(iw\\,ih):min(iw\\,ih),scale=600:600:flags=lanczos',
-                 '-frames:v', '1', '-q:v', '2', '-f', 'image2', '-vcodec', 'mjpeg', 'pipe:1', source=data)
-    if not jpg:
-        raise ValueError('Konwersja okładki nie powiodła się')
-    return jpg, 'image/jpeg', 600, 600
-
+    side = min(w, h)
+    image = image.crop(((w - side) // 2, (h - side) // 2,
+                        (w - side) // 2 + side, (h - side) // 2 + side))
+    image = image.convert('RGB').resize((600, 600), Image.Resampling.LANCZOS)
+    output = BytesIO()
+    image.save(output, format='JPEG', quality=92, subsampling=0)
+    return output.getvalue(), 'image/jpeg', 600, 600
 
 def add_cover(path, source_cover, dry_run=False):
     if source_cover is None:

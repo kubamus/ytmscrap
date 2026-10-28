@@ -5,6 +5,8 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from io import BytesIO
+from PIL import Image
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -66,6 +68,20 @@ class RekordboxTests(unittest.TestCase):
             self.assertEqual(FLAC(target)['artist'], ['Artist'])
             self.assertEqual(r.cover_details(FLAC(target).pictures[0].data), (600, 600))
             self.assertEqual(r.process(path)[0], 'skip')
+
+    def test_square_with_black_bars_is_fixed(self):
+        # YouTube can provide a 1:1 image with a narrow bright strip inside.
+        image = Image.new('RGB', (600, 600), (0, 0, 0))
+        for y in range(240, 360):
+            for x in range(600):
+                image.putpixel((x, y), (240, 80, 40))
+        buffer = BytesIO()
+        image.save(buffer, format='JPEG')
+        converted, mime, w, h = r.square_picture(buffer.getvalue())
+        self.assertEqual((mime, w, h), ('image/jpeg', 600, 600))
+        with Image.open(BytesIO(converted)) as result:
+            self.assertGreater(result.getpixel((300, 20))[0], 140)
+            self.assertGreater(result.getpixel((300, 580))[0], 140)
 
     def test_square_jpeg_stays_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:

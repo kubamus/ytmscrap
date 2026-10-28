@@ -112,7 +112,7 @@ ytmscrap --fix-rekordbox "/Users/me/Music/DJ"      # wybrany folder
 ytmscrap --fix-rekordbox . --dry-run               # podgląd
 ```
 
-- FLAC: zmienia tylko zbyt szeroką okładkę na kwadrat 600×600, zachowuje audio, tagi i inne grafiki. Kwadratowe JPEG/PNG zostają bez zmian.
+- FLAC: zmienia prostokątną okładkę na kwadrat 600×600 i usuwa wyraźne czarne pasy osadzone w obrazie (także gdy plik JPG jest już kwadratowy). Zachowuje audio, tagi i inne grafiki. Poprawne kwadratowe JPEG/PNG zostają bez zmian.
 - WAV, MP3, M4A, Opus, Ogg, AAC, AIFF: tworzy FLAC obok oryginału; zachowuje tagi. Jeśli artist/title są puste, może uzupełnić je z nazwy Artysta - Tytuł. Istniejącego FLAC nie nadpisuje.
 - Okładkę pobiera z pliku audio lub z JPG/PNG/WEBP o tej samej nazwie obok utworu.
 - Przy pobieraniu poprawia tylko nowe pliki. WAV + tryb Rekordbox daje WAV oraz dodatkowy FLAC.
