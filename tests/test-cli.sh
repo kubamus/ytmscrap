@@ -22,7 +22,7 @@ chmod +x "$tmp/bin/yt-dlp" "$tmp/bin/ffmpeg" "$tmp/bin/deno"
 export PATH="$tmp/bin:$PATH"
 export YTMSCRAP_ARG_LOG="$tmp/args.txt"
 
-output=$(printf '%s\n%s\n%s\n' "$tmp/My Music" 'https://music.youtube.com/playlist?list=PLQLDyACIOtUw&si=test' '' | bash "$root/ytmscrap" 2>&1)
+output=$(printf '%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://music.youtube.com/playlist?list=PLQLDyACIOtUw&si=test' '2' '' | bash "$root/ytmscrap" 2>&1)
 [ -f "$tmp/args.txt" ] || { echo 'FAIL: no yt-dlp invocation' >&2; exit 1; }
 grep -Fq 'https://music.youtube.com/playlist?list=PLQLDyACIOtUw&si=test' "$tmp/args.txt"
 grep -Fqx -- '--embed-thumbnail' "$tmp/args.txt"
@@ -34,17 +34,31 @@ grep -Fqx -- '%(artist,uploader)s - %(track,title)s.%(ext)s' "$tmp/args.txt"
 grep -Fqx -- "$tmp/My Music/downloaded.txt" "$tmp/args.txt"
 [[ "$output" == *'https://www.tunemymusic.com/'* ]]
 
+[[ "$output" == *'Format: FLAC'* ]]
+
+# WAV keeps the cover as a separate JPG.
+rm -f "$tmp/args.txt"
+output_wav=$(printf '%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://music.youtube.com/playlist?list=PLQLDyACIOtUw' '1' '' | bash "$root/ytmscrap" 2>&1)
+grep -Fqx -- 'wav' "$tmp/args.txt"
+grep -Fqx -- '--write-thumbnail' "$tmp/args.txt"
+grep -Fqx -- '--convert-thumbnails' "$tmp/args.txt"
+grep -Fqx -- 'jpg' "$tmp/args.txt"
+grep -Fqx -- "$tmp/My Music/downloaded-wav.txt" "$tmp/args.txt"
+if grep -Fqx -- '--embed-thumbnail' "$tmp/args.txt"; then
+  echo 'FAIL: WAV attempted to embed artwork' >&2; exit 1
+fi
+[[ "$output_wav" == *'Format: WAV'* ]]
 rm -f "$tmp/args.txt"
 if printf '.\nhttps://example.com/playlist?list=abc\n' | bash "$root/ytmscrap" > /dev/null 2>&1; then
   echo 'FAIL: invalid URL accepted' >&2; exit 1
 fi
 [ ! -f "$tmp/args.txt" ] || { echo 'FAIL: yt-dlp invoked for invalid URL' >&2; exit 1; }
 
-if printf '.\nhttps://music.youtube.com/playlist?list=abc\nn\n' | bash "$root/ytmscrap" > /dev/null 2>&1; then
+if printf '.\nhttps://music.youtube.com/playlist?list=abc\n2\nn\n' | bash "$root/ytmscrap" > /dev/null 2>&1; then
   :
 else
   echo 'FAIL: cancel should exit 0' >&2; exit 1
 fi
 [ ! -f "$tmp/args.txt" ] || { echo 'FAIL: yt-dlp invoked on cancel' >&2; exit 1; }
 
-printf 'PASS: prompt, paths, tags, URL validation and cancel\n'
+printf 'PASS: WAV, FLAC, paths, metadata, thumbnails, archives, URL validation and cancel\n'
