@@ -5,6 +5,7 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/My Music"
+expected_output_dir=$(cd "$tmp/My Music" && pwd -P)
 
 cat > "$tmp/bin/yt-dlp" <<'FAKE'
 #!/usr/bin/env bash
@@ -31,7 +32,7 @@ grep -Fqx -- '--download-archive' "$tmp/args.txt"
 grep -Fqx -- 'bestaudio' "$tmp/args.txt"
 grep -Fqx -- 'flac' "$tmp/args.txt"
 grep -Fqx -- '%(artist,uploader)s - %(track,title)s.%(ext)s' "$tmp/args.txt"
-grep -Fqx -- "$tmp/My Music/downloaded.txt" "$tmp/args.txt"
+grep -Fqx -- "$expected_output_dir/downloaded.txt" "$tmp/args.txt"
 [[ "$output" == *'https://www.tunemymusic.com/'* ]]
 
 [[ "$output" == *'Format: FLAC'* ]]
@@ -43,7 +44,7 @@ grep -Fqx -- 'wav' "$tmp/args.txt"
 grep -Fqx -- '--write-thumbnail' "$tmp/args.txt"
 grep -Fqx -- '--convert-thumbnails' "$tmp/args.txt"
 grep -Fqx -- 'jpg' "$tmp/args.txt"
-grep -Fqx -- "$tmp/My Music/downloaded-wav.txt" "$tmp/args.txt"
+grep -Fqx -- "$expected_output_dir/downloaded-wav.txt" "$tmp/args.txt"
 if grep -Fqx -- '--embed-thumbnail' "$tmp/args.txt"; then
   echo 'FAIL: WAV attempted to embed artwork' >&2; exit 1
 fi
