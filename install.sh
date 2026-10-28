@@ -8,6 +8,7 @@ info() { printf '\n==> %s\n' "$*"; }
 # Supports local ZIP/clone installation and a single-line download from GitHub.
 remote_repo=${1:-}
 tmp_script=''
+tmp_helper=''
 if [ -n "$remote_repo" ]; then
   if [[ ! "$remote_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
     err 'Repozytorium powinno mieć postać OWNER/REPO.'
@@ -15,15 +16,19 @@ if [ -n "$remote_repo" ]; then
   fi
   command -v curl >/dev/null 2>&1 || { err 'Brak curl.'; exit 1; }
   tmp_script=$(mktemp)
-  trap 'rm -f "$tmp_script"' EXIT
+  tmp_helper=$(mktemp)
+  trap 'rm -f "$tmp_script" "$tmp_helper"' EXIT
   info "Pobieranie CLI z publicznego repozytorium $remote_repo"
   curl -fL --retry 2 --output "$tmp_script" "https://raw.githubusercontent.com/$remote_repo/main/ytmscrap"
   script_source=$tmp_script
+  curl -fL --retry 2 --output "$tmp_helper" "https://raw.githubusercontent.com/$remote_repo/main/genre_tagger.py"
+  helper_source=$tmp_helper
 else
   base_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
   script_source="$base_dir/ytmscrap"
-  if [ ! -f "$script_source" ]; then
-    err 'Brak pliku ytmscrap obok install.sh. Pobierz całe repozytorium lub użyj trybu OWNER/REPO.'
+  helper_source="$base_dir/genre_tagger.py"
+  if [ ! -f "$script_source" ] || [ ! -f "$helper_source" ]; then
+    err 'Brak ytmscrap lub genre_tagger.py obok install.sh. Pobierz całe repozytorium lub użyj trybu OWNER/REPO.'
     exit 1
   fi
 fi
@@ -35,7 +40,7 @@ case "$(uname -s)" in
 esac
 
 info "Instalowanie ytmscrap ($os)"
-printf 'Wymagania: yt-dlp, FFmpeg i Deno. Zainstaluję brakujące narzędzia.\n'
+printf 'Wymagania: yt-dlp, FFmpeg, Deno, Python 3.10+ i Mutagen. Zainstaluję brakujące narzędzia.\n'
 
 # Package managers may add executable links to locations missing from the
 # current shell's PATH; discover those directories before and after install.
@@ -54,6 +59,27 @@ setup_windows_path() {
 
 setup_brew_path() {
   export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+}
+
+python_exec=''
+find_python() {
+  local name path
+  python_exec=''
+  for name in python3.14 python3.13 python3.12 python3.11 python3 python; do
+    if command -v "$name" >/dev/null 2>&1 && "$name" -c 'import sys; assert sys.version_info >= (3,10)' >/dev/null 2>&1; then
+      python_exec=$name
+      return 0
+    fi
+  done
+  if [ "$os" = windows ]; then
+    for path in "$HOME/AppData/Local/Programs/Python/Python313/python.exe" "$HOME/AppData/Local/Programs/Python/Python312/python.exe"; do
+      if [ -f "$path" ] && "$path" -c 'import sys; assert sys.version_info >= (3,10)' >/dev/null 2>&1; then
+        python_exec=$path
+        return 0
+      fi
+    done
+  fi
+  return 1
 }
 
 if [ "$os" = windows ]; then
@@ -77,6 +103,11 @@ if [ "$os" = windows ]; then
       printf '[OK] %s już zainstalowany\n' "$tool"
     fi
   done
+  if ! find_python; then
+    info 'Instalowanie Python 3.12 przez winget'
+    "$winget_cmd" install --exact --id Python.Python.3.12 --source winget --accept-source-agreements --accept-package-agreements
+    setup_windows_path
+  fi
 else
   setup_brew_path
   if ! command -v brew >/dev/null 2>&1; then
@@ -98,7 +129,32 @@ else
     info "Instalowanie przez Homebrew: ${missing[*]}"
     brew install "${missing[@]}"
   fi
+  if ! find_python; then
+    info 'Instalowanie Python przez Homebrew'
+    brew install python
+    setup_brew_path
+  fi
 fi
+
+# Private Python environment for metadata tagging.
+if ! find_python; then
+  err 'Python 3.10+ nie jest dostępny. Otwórz nowy terminal i ponów instalację.'
+  exit 1
+fi
+share_dir="$HOME/.local/share/ytmscrap"
+mkdir -p -- "$share_dir"
+cp -- "$helper_source" "$share_dir/genre_tagger.py"
+if [ ! -x "$share_dir/venv/bin/python" ] && [ ! -x "$share_dir/venv/Scripts/python.exe" ]; then
+  info 'Tworzenie środowiska Python'
+  "$python_exec" -m venv "$share_dir/venv"
+fi
+if [ -x "$share_dir/venv/Scripts/python.exe" ]; then
+  venv_python="$share_dir/venv/Scripts/python.exe"
+else
+  venv_python="$share_dir/venv/bin/python"
+fi
+info 'Instalowanie Mutagen'
+"$venv_python" -m pip install --disable-pip-version-check 'mutagen>=1.47,<2'
 
 # Install in user's home (no system-wide write permissions needed).
 bin_dir="$HOME/.local/bin"
