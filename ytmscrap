@@ -206,7 +206,6 @@ yt_args+=(
   --download-archive "$archive_file"
   -o '%(artist,uploader)s - %(track,title)s.%(ext)s'
   -P "$output_dir"
-  "$playlist_url"
 )
 
 manifest=''
@@ -215,6 +214,7 @@ if [ "$rekordbox_mode" -eq 1 ]; then
   trap 'rm -f -- "$manifest"' EXIT
   yt_args+=(--print-to-file 'after_move:%(filepath)s' "$manifest")
 fi
+yt_args+=("$playlist_url")
 
 if yt-dlp "${yt_args[@]}"; then
   printf '\nZakończono. Pliki: %s\n' "$output_dir"
