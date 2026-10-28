@@ -45,7 +45,7 @@ Instalacja `winget` może wymagać potwierdzenia zgód lub uprawnień systemu. J
    ```
 
 3. Instalator użyje Homebrew do instalacji brakujących `yt-dlp`, `ffmpeg`, `deno` i `python`, a następnie skonfiguruje `Mutagen` w osobnym środowisku. Jeśli Homebrew nie ma, spróbuje je zainstalować z oficjalnego instalatora (może wymagać hasła administratora i narzędzi Apple). Instaluje `ytmscrap` w `~/.local/bin` i aktualizuje PATH.
-4. Otwórz nowy terminal i wpisz `ytmscrap`.
+4. Otwórz nowy terminal i wpisz `ytmscrap`. Jeśli chcesz uruchomić go w tym samym oknie, wykonaj `source ~/.zshrc`, a potem `ytmscrap --check`.
 
 ### Szybki start po instalacji
 
@@ -141,7 +141,19 @@ brew upgrade yt-dlp ffmpeg deno
 
 ## Problemy
 
-**`ytmscrap: command not found`** — otwórz nowy terminal lub w bieżącym uruchom `export PATH="$HOME/.local/bin:$PATH"`.
+**`zsh: command not found: ytmscrap` (macOS)** — skrypt instalacyjny działa w osobnym procesie i nie może zmienić `PATH` obecnej sesji. Wpisz:
+```bash
+source ~/.zshrc
+ytmscrap --check
+```
+Jeżeli nadal nie działa, sprawdź:
+```bash
+ls -l ~/.local/bin/ytmscrap
+~/.local/bin/ytmscrap --check
+```
+Jeśli nie ma pliku, ponów instalację i sprawdź komunikat błędu instalatora.
+
+**`ytmscrap: command not found` (Windows Git Bash)** — otwórz nowy terminal lub wpisz `source ~/.bashrc`.
 
 **`yt-dlp`/`ffmpeg`/`deno`/`python` nie znaleziono** — uruchom `ytmscrap --check`, sprawdź, czy `winget` lub Homebrew dodały programy do PATH, i ponów `bash install.sh`.
 
