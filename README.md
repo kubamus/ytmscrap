@@ -1,6 +1,6 @@
 # ytmscrap
 
-Proste CLI do pobierania **całych playlist z YouTube Music** do plików **WAV lub FLAC** z metadanymi i okładkami, gotowych do importu w Rekordbox. Działa w **Git Bash na Windows 10/11** i w terminalu **macOS**.
+Proste CLI do pobierania **całych playlist z YouTube Music** do plików **WAV lub FLAC** z metadanymi i okładkami, gotowych do importu w Rekordbox. Narzędzie potrafi też wyszukać gatunek `Genre` na podstawie MusicBrainz i Deezer. Działa w **Git Bash na Windows 10/11** i w terminalu **macOS**.
 
 > **Jakość:** YouTube Music dostarcza audio skompresowane stratnie (AAC/Opus). WAV i FLAC powstają z tego samego źródła i **nie poprawiają jego jakości**. WAV zapisuje nieskompresowany PCM, a FLAC kompresuje bezstratnie, więc oba brzmią tak samo. WAV zajmuje zwykle więcej miejsca. Pobieraj tylko materiały, do których masz prawa lub zgodę.
 
@@ -27,7 +27,7 @@ Jeśli wolisz nie uruchamiać instalatora z internetu, użyj instalacji z ZIP po
    bash install.sh
    ```
 
-4. Instalator doinstaluje brakujące `yt-dlp`, `FFmpeg`, `Deno` przez `winget` i skopiuje polecenie `ytmscrap` do `~/.local/bin`. Zamknij Git Bash, otwórz go ponownie i wpisz:
+4. Instalator doinstaluje brakujące `yt-dlp`, `FFmpeg`, `Deno` i `Python 3.12` przez `winget`, a pakiet `Mutagen` w osobnym środowisku Pythona i skopiuje polecenie `ytmscrap` do `~/.local/bin`. Zamknij Git Bash, otwórz go ponownie i wpisz:
 
    ```bash
    ytmscrap
@@ -44,7 +44,7 @@ Instalacja `winget` może wymagać potwierdzenia zgód lub uprawnień systemu. J
    bash install.sh
    ```
 
-3. Instalator użyje Homebrew do instalacji brakujących `yt-dlp`, `ffmpeg`, `deno`. Jeśli Homebrew nie ma, spróbuje je zainstalować z oficjalnego instalatora (może wymagać hasła administratora i narzędzi Apple). Instaluje `ytmscrap` w `~/.local/bin` i aktualizuje PATH.
+3. Instalator użyje Homebrew do instalacji brakujących `yt-dlp`, `ffmpeg`, `deno` i `python`, a następnie skonfiguruje `Mutagen` w osobnym środowisku. Jeśli Homebrew nie ma, spróbuje je zainstalować z oficjalnego instalatora (może wymagać hasła administratora i narzędzi Apple). Instaluje `ytmscrap` w `~/.local/bin` i aktualizuje PATH.
 4. Otwórz nowy terminal i wpisz `ytmscrap`.
 
 ### Szybki start po instalacji
@@ -73,6 +73,8 @@ Metadane: tagi; osobny plik JPG
 Nazwy: Wykonawca - Tytuł.wav (bez numeru playlisty)
 
 Rozpocząć pobieranie? [T/n]: t
+...
+Automatycznie uzupełnić gatunki Genre? [T/n]: t
 ```
 
 Zostaw pierwsze pole **puste** lub wpisz `./`, aby zapisać pliki tam, gdzie w danej chwili pracuje terminal. Możesz też podać pełną ścieżkę. W Windows Git Bash działa zapis typu `C:\Music\DJ`.
@@ -94,13 +96,35 @@ Aby **przenieść playlistę ze Spotify do YouTube Music**, skorzystaj z: **http
 - Zapisuje historię pobrań w folderze docelowym: `downloaded.txt` dla FLAC i `downloaded-wav.txt` dla WAV. Możesz pobrać obie wersje bez kasowania historii.
 - Działa na Windows (Git Bash) i macOS. `Deno` i skrypty EJS pomagają yt-dlp obsłużyć obecne wymagania YouTube.
 
+## Automatyczne gatunki Genre
+
+Po pobraniu program pyta **„Automatycznie uzupełnić gatunki Genre?”**. Domyślnie próbuje naprawić gatunki w wybranym folderze. Bez pobierania utworów ponownie możesz użyć:
+
+```bash
+ytmscrap --fix-genres .                      # bieżący folder i podfoldery
+ytmscrap --fix-genres "/Users/me/Music/DJ"   # wskazany folder
+ytmscrap --fix-genres . --dry-run            # tylko pokaż propozycje
+```
+
+- Wyszukuje gatunki w **MusicBrainz** (nagranie lub wydanie) i, gdy brak danych, w **Deezer** (gatunek albumu). Nie wymaga klucza API. Działanie wymaga internetu.
+- Sprawdza zgodność tytułu i wykonawcy. Nie zawsze znajdzie gatunek, zwłaszcza dla remixów, mashupów i mniej znanych polskich nagrań; zamiast zgadywać, pozostawia pole puste lub `Music`.
+- Zmienia wyłącznie `Genre` — i tylko jeśli tag jest pusty lub ma wartość `Music`. Nie nadpisuje pozostałych gatunków.
+- **FLAC**: zmienia tag Vorbis Comment bez ponownego kodowania audio; zachowuje okładkę. **WAV**: FFmpeg zapisuje `Genre` jako RIFF INFO/IGNR przez `-c:a copy`, czyli bez zmiany próbek audio; wymaga chwilowo miejsca na kopię pliku.
+- Wyniki zapytań zapisuje w `~/.cache/ytmscrap/genres-v1.json`. MusicBrainz ma limit **1 zapytanie na sekundę**, więc duże foldery mogą zająć kilka minut.
+- Jeśli pole `Genre` nie odświeży się od razu w Rekordboxie, zaznacz utwory w **Collection** → **Reload Tag**. Przed użyciem tej opcji zwróć uwagę, że odświeża również inne tagi odczytane z pliku.
+
+Uwaga: przy instalacji starszej wersji ponownie uruchom instalator, żeby pobrać `genre_tagger.py`, Python i Mutagen.
+
 ## Przydatne komendy
 
 ```bash
+ytmscrap --fix-genres .    # napraw gatunki w istniejących plikach
 ytmscrap --help        # pomoc
 ytmscrap --check       # sprawdzenie zależności
 bash install.sh        # ponowna instalacja/naprawa PATH (w folderze repo)
-bash tests/test-cli.sh  # testy bez pobierania audio
+bash tests/test-cli.sh        # testy bez pobierania audio
+bash tests/test-install.sh    # test instalatora (mock)
+python3 -m unittest discover -s tests -p 'test_genres.py' -v  # tagi
 ```
 
 Aktualizacja narzędzi:
@@ -119,7 +143,7 @@ brew upgrade yt-dlp ffmpeg deno
 
 **`ytmscrap: command not found`** — otwórz nowy terminal lub w bieżącym uruchom `export PATH="$HOME/.local/bin:$PATH"`.
 
-**`yt-dlp`/`ffmpeg`/`deno` nie znaleziono** — uruchom `ytmscrap --check`, sprawdź, czy `winget` lub Homebrew dodały programy do PATH, i ponów `bash install.sh`.
+**`yt-dlp`/`ffmpeg`/`deno`/`python` nie znaleziono** — uruchom `ytmscrap --check`, sprawdź, czy `winget` lub Homebrew dodały programy do PATH, i ponów `bash install.sh`.
 
 **Brak starszych utworów przy ponownym pobieraniu** — pliki `downloaded.txt` (FLAC) i `downloaded-wav.txt` (WAV) w folderze zapisu służą do pomijania już pobranych pozycji. Jeśli wcześniej pobrałeś pliki z numerami playlisty, skrypt ich automatycznie nie przemianuje. Usuń wpisy w archiwum lub zmień nazwy starych plików ręcznie, jeśli potrzebujesz pobrania ich od nowa.
 
