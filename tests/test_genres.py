@@ -71,6 +71,35 @@ class GenreTests(unittest.TestCase):
                 else:
                     self.assertIn(b"IGNR", path.read_bytes())
 
+    def test_ssl_failures_do_not_cache_empty_genre(self):
+        import ssl
+        from urllib.error import URLError
+        from contextlib import redirect_stderr
+        from io import StringIO
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "genres.json"
+            lookup = g.Lookup(cache)
+            error = URLError(ssl.SSLCertVerificationError("CERTIFICATE_VERIFY_FAILED"))
+            log = StringIO()
+            with patch.object(g, "urlopen", side_effect=error), redirect_stderr(log):
+                with self.assertRaises(ConnectionError):
+                    lookup.find("White 2115", "California")
+            self.assertIn("CERTIFICATE_VERIFY_FAILED", log.getvalue())
+            self.assertIn("certifi", log.getvalue())
+            self.assertEqual(lookup.cache, {})
+            lookup.save()
+            self.assertFalse(cache.exists())
+
+    def test_stale_empty_genre_is_retried(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "genres.json"
+            cache.write_text('{"white 2115|california": {"genre": "", "source": "Deezer", "at": 9999999999}}')
+            lookup = g.Lookup(cache)
+            with patch.object(lookup, "musicbrainz", return_value="Hip-Hop"):
+                self.assertEqual(lookup.find("White 2115", "California")[0], "Hip-Hop")
+            self.assertEqual(lookup.cache["white 2115|california"]["genre"], "Hip-Hop")
+
     def test_protect_existing_genre(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "White 2115 - California.flac"
