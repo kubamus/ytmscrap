@@ -17,6 +17,20 @@ FAKE
 chmod +x "$tmp/bin/uname"
 export PATH="$tmp/bin:$PATH"
 
+# Simulate Python and its virtual environment without pip/network.
+cat > "$tmp/bin/python3.14" <<'FAKEPY'
+#!/usr/bin/env bash
+if [ "$1" = -c ]; then exit 0; fi
+if [ "$1" = -m ] && [ "$2" = venv ]; then
+  mkdir -p "$3/bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$3/bin/python"
+  chmod +x "$3/bin/python"
+  exit 0
+fi
+exit 1
+FAKEPY
+chmod +x "$tmp/bin/python3.14"
+
 cat > "$tmp/bin/brew" <<'FAKE'
 #!/usr/bin/env bash
 exit 0
@@ -25,6 +39,7 @@ chmod +x "$tmp/bin/brew"
 export YTMSCRAP_MOCK_UNAME=Darwin
 HOME="$tmp/home" bash "$root/install.sh" > "$tmp/mac.log"
 [ -x "$tmp/home/.local/bin/ytmscrap" ]
+[ -f "$tmp/home/.local/share/ytmscrap/genre_tagger.py" ]
 grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.zprofile"
 grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.zshrc"
 
@@ -48,7 +63,15 @@ cat > "$tmp/bin/curl" <<'FAKE'
 while [ "$#" -gt 0 ]; do
   if [ "$1" = --output ]; then
     shift
-    cp "$YTMSCRAP_REMOTE_FIXTURE" "$1"
+    dest="$1"
+    shift
+    url=""
+    for arg in "$@"; do url="$arg"; done
+    case "$url" in
+      */genre_tagger.py) cp "$YTMSCRAP_REMOTE_HELPER" "$dest" ;;
+      */ytmscrap) cp "$YTMSCRAP_REMOTE_FIXTURE" "$dest" ;;
+      *) exit 1 ;;
+    esac
     exit 0
   fi
   shift
@@ -57,9 +80,11 @@ exit 1
 FAKE
 chmod +x "$tmp/bin/curl"
 export YTMSCRAP_REMOTE_FIXTURE="$root/ytmscrap"
+export YTMSCRAP_REMOTE_HELPER="$root/genre_tagger.py"
 rm -f "$tmp/home/.local/bin/ytmscrap"
 HOME="$tmp/home" bash "$root/install.sh" demo-user/ytmscrap > "$tmp/remote.log"
 [ -x "$tmp/home/.local/bin/ytmscrap" ]
 grep -Fq 'publicznego repozytorium demo-user/ytmscrap' "$tmp/remote.log"
+head -n 1 "$tmp/home/.local/share/ytmscrap/genre_tagger.py" | grep -Fq '#!/usr/bin/env python3'
 
-echo 'PASS: Windows/macOS local and remote install, PATH and repeated setup' 
+echo 'PASS: Windows/macOS local/remote install, Python helper, PATH and repeat setup' 
