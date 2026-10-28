@@ -1,6 +1,6 @@
 # ytmscrap
 
-Proste CLI do pobierania **całych playlist z YouTube Music** do plików **WAV lub FLAC** z metadanymi i okładkami, gotowych do importu w Rekordbox. Narzędzie potrafi też wyszukać gatunek `Genre` na podstawie MusicBrainz i Deezer. Działa w **Git Bash na Windows 10/11** i w terminalu **macOS**.
+Proste CLI do pobierania **całych playlist z YouTube Music** do plików **WAV lub FLAC** z metadanymi i okładkami, gotowych do importu w Rekordbox. Tryb Rekordbox przycina szerokie miniatury YouTube do formatu 1:1. Narzędzie potrafi też wyszukać gatunek `Genre` na podstawie MusicBrainz i Deezer. Działa w **Git Bash na Windows 10/11** i w terminalu **macOS**.
 
 > **Jakość:** YouTube Music dostarcza audio skompresowane stratnie (AAC/Opus). WAV i FLAC powstają z tego samego źródła i **nie poprawiają jego jakości**. WAV zapisuje nieskompresowany PCM, a FLAC kompresuje bezstratnie, więc oba brzmią tak samo. WAV zajmuje zwykle więcej miejsca. Pobieraj tylko materiały, do których masz prawa lub zgodę.
 
@@ -95,6 +95,29 @@ Aby **przenieść playlistę ze Spotify do YouTube Music**, skorzystaj z: **http
 - Nadaje nazwy `Artysta - Tytuł.wav` lub `Artysta - Tytuł.flac`, bez numeru pozycji na playliście.
 - Zapisuje historię pobrań w folderze docelowym: `downloaded.txt` dla FLAC i `downloaded-wav.txt` dla WAV. Możesz pobrać obie wersje bez kasowania historii.
 - Działa na Windows (Git Bash) i macOS. `Deno` i skrypty EJS pomagają yt-dlp obsłużyć obecne wymagania YouTube.
+
+## Tryb Rekordbox: FLAC + kwadratowe okładki
+
+Podczas pobierania program pyta, czy przygotować pliki dla rekordbox. Opcja jest domyślnie wyłączona. Możesz włączyć ją od razu:
+
+```bash
+ytmscrap --rekordbox "https://music.youtube.com/playlist?list=TWOJA_PLAYLISTA"
+```
+
+Naprawa już pobranych plików (także w podfolderach):
+
+```bash
+ytmscrap --fix-rekordbox .                         # bieżący folder
+ytmscrap --fix-rekordbox "/Users/me/Music/DJ"      # wybrany folder
+ytmscrap --fix-rekordbox . --dry-run               # podgląd
+```
+
+- FLAC: zmienia tylko zbyt szeroką okładkę na kwadrat 600×600, zachowuje audio, tagi i inne grafiki. Kwadratowe JPEG/PNG zostają bez zmian.
+- WAV, MP3, M4A, Opus, Ogg, AAC, AIFF: tworzy FLAC obok oryginału; zachowuje tagi. Jeśli artist/title są puste, może uzupełnić je z nazwy Artysta - Tytuł. Istniejącego FLAC nie nadpisuje.
+- Okładkę pobiera z pliku audio lub z JPG/PNG/WEBP o tej samej nazwie obok utworu.
+- Przy pobieraniu poprawia tylko nowe pliki. WAV + tryb Rekordbox daje WAV oraz dodatkowy FLAC.
+- MP3/Opus nie odzyskają jakości przy konwersji do FLAC. Zmiana grafiki w FLAC nie koduje dźwięku ponownie.
+- W rekordbox użyj Collection → Reload Tag, by odświeżyć miniatury.
 
 ## Diagnostyka połączenia z API gatunków
 
