@@ -39,6 +39,47 @@ case "$(uname -s)" in
   *) err 'Obsługiwane systemy: Windows (Git Bash) i macOS.'; exit 1 ;;
 esac
 
+# Install the command before optional package installs; an unavailable package must not leave ytmscrap missing.
+# Install in user's home (no system-wide write permissions needed).
+bin_dir="$HOME/.local/bin"
+mkdir -p -- "$bin_dir"
+cp -- "$script_source" "$bin_dir/ytmscrap"
+chmod +x "$bin_dir/ytmscrap"
+
+# Only add exact lines that aren't present yet. No PATH duplicates on re-run.
+append_line() {
+  local line=$1 target=$2
+  touch "$target"
+  if ! grep -Fqx -- "$line" "$target"; then
+    printf '\n%s\n' "$line" >> "$target"
+  fi
+}
+path_line='export PATH="$HOME/.local/bin:$PATH"'
+if [ "$os" = windows ]; then
+  append_line "$path_line" "$HOME/.bashrc"
+  append_line "$path_line" "$HOME/.bash_profile"
+else
+  # Homebrew on Apple Silicon is often not already in a fresh PATH.
+  if [ -x /opt/homebrew/bin/brew ]; then
+    append_line 'eval "$(/opt/homebrew/bin/brew shellenv)"' "$HOME/.zprofile"
+  elif [ -x /usr/local/bin/brew ]; then
+    append_line 'eval "$(/usr/local/bin/brew shellenv)"' "$HOME/.zprofile"
+  fi
+  append_line "$path_line" "$HOME/.zprofile"
+  append_line "$path_line" "$HOME/.zshrc"
+  append_line "$path_line" "$HOME/.bash_profile"
+fi
+export PATH="$bin_dir:$PATH"
+
+# A child installer process cannot change its caller's PATH.
+# Explain how to activate the command in the current terminal window.
+if [ "$os" = macos ]; then
+  printf '\n[INFO] W już otwartym terminalu zsh uruchom: source ~/.zshrc\n'
+else
+  printf '\n[INFO] W już otwartym Git Bash uruchom: source ~/.bashrc\n'
+fi
+
+
 info "Instalowanie ytmscrap ($os)"
 printf 'Wymagania: yt-dlp, FFmpeg, Deno, Python 3.10+ i Mutagen. Zainstaluję brakujące narzędzia.\n'
 
@@ -156,36 +197,6 @@ fi
 info 'Instalowanie Mutagen'
 "$venv_python" -m pip install --disable-pip-version-check 'mutagen>=1.47,<2'
 
-# Install in user's home (no system-wide write permissions needed).
-bin_dir="$HOME/.local/bin"
-mkdir -p -- "$bin_dir"
-cp -- "$script_source" "$bin_dir/ytmscrap"
-chmod +x "$bin_dir/ytmscrap"
-
-# Only add exact lines that aren't present yet. No PATH duplicates on re-run.
-append_line() {
-  local line=$1 target=$2
-  touch "$target"
-  if ! grep -Fqx -- "$line" "$target"; then
-    printf '\n%s\n' "$line" >> "$target"
-  fi
-}
-path_line='export PATH="$HOME/.local/bin:$PATH"'
-if [ "$os" = windows ]; then
-  append_line "$path_line" "$HOME/.bashrc"
-  append_line "$path_line" "$HOME/.bash_profile"
-else
-  # Homebrew on Apple Silicon is often not already in a fresh PATH.
-  if [ -x /opt/homebrew/bin/brew ]; then
-    append_line 'eval "$(/opt/homebrew/bin/brew shellenv)"' "$HOME/.zprofile"
-  elif [ -x /usr/local/bin/brew ]; then
-    append_line 'eval "$(/usr/local/bin/brew shellenv)"' "$HOME/.zprofile"
-  fi
-  append_line "$path_line" "$HOME/.zprofile"
-  append_line "$path_line" "$HOME/.zshrc"
-  append_line "$path_line" "$HOME/.bash_profile"
-fi
-export PATH="$bin_dir:$PATH"
 
 info 'Sprawdzanie zależności'
 missing_any=0
