@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ytmscrap — YouTube Music playlist downloader for macOS and Git Bash on Windows.
+# ytmscrap — YouTube / YouTube Music song and playlist downloader for macOS and Git Bash.
 set -euo pipefail
 
 usage() {
@@ -7,8 +7,8 @@ usage() {
 ytmscrap — YouTube Music -> WAV / FLAC
 
 Użycie:
-  ytmscrap                Pytania o folder, playlistę i format
-  ytmscrap "URL"          Pytanie o folder; URL podany jako argument
+  ytmscrap                Pytania o folder, link do utworu/playlisty i format
+  ytmscrap "URL"          Link do utworu albo playlisty; pytanie o folder
   ytmscrap --rekordbox "URL"  Pobierz z przygotowaniem okładek do rekordbox
   ytmscrap --fix-rekordbox [FOLDER] [--dry-run]  FLAC + kwadratowe okładki
   ytmscrap --fix-genres [FOLDER] [--dry-run]  Uzupełnij Genre w plikach FLAC/WAV
@@ -113,18 +113,29 @@ if ! mkdir -p -- "$output_dir"; then
 fi
 output_dir=$(cd -- "$output_dir" && pwd -P)
 
-playlist_url=${1:-}
-while [ -z "$playlist_url" ]; do
-  if ! IFS= read -r -p 'Link playlisty YouTube Music: ' playlist_url; then
+media_url=${1:-}
+while [ -z "$media_url" ]; do
+  if ! IFS= read -r -p 'Link utworu lub playlisty YouTube / YouTube Music: ' media_url; then
     printf '\nAnulowano.\n'
     exit 1
   fi
 done
 
-# Accept YouTube Music and ordinary YouTube playlist URLs, including extra query parameters.
-if [[ ! "$playlist_url" =~ ^https://(music\.youtube\.com|www\.youtube\.com|youtube\.com)/playlist\? ]] ||
-   [[ ! "$playlist_url" =~ [\?\&]list=[A-Za-z0-9_-]+ ]]; then
-  printf 'Niepoprawny link. Podaj adres playlisty YouTube Music lub YouTube.\n' >&2
+# Distinguish playlist pages from video links. A watch?v=...&list=... URL
+# must download ONLY the linked song, not the entire related playlist.
+media_type=''
+if [[ "$media_url" =~ ^https://(music\.youtube\.com|www\.youtube\.com|m\.youtube\.com|youtube\.com)/playlist\? ]] &&
+   [[ "$media_url" =~ [\?\&]list=[A-Za-z0-9_-]+([\&\#]|$) ]]; then
+  media_type=playlist
+elif [[ "$media_url" =~ ^https://(music\.youtube\.com|www\.youtube\.com|m\.youtube\.com|youtube\.com)/watch\? ]] &&
+     [[ "$media_url" =~ [\?\&]v=[A-Za-z0-9_-]{11}([\&\#]|$) ]]; then
+  media_type=song
+elif [[ "$media_url" =~ ^https://(www\.)?youtu\.be/[A-Za-z0-9_-]{11}([/?\#]|$) ]]; then
+  media_type=song
+elif [[ "$media_url" =~ ^https://(www\.|m\.)?youtube\.com/(shorts|live)/[A-Za-z0-9_-]{11}([/?\#]|$) ]]; then
+  media_type=song
+else
+  printf 'Niepoprawny link. Podaj adres utworu lub playlisty z YouTube / YouTube Music.\n' >&2
   exit 2
 fi
 
@@ -154,7 +165,12 @@ else
   cover_note='okladka osadzona w FLAC'
 fi
 
-printf '\nFolder: %s\n' "$output_dir"
+if [ "$media_type" = song ]; then
+  printf '\nŹródło: pojedynczy utwór\n'
+else
+  printf '\nŹródło: playlista\n'
+fi
+printf 'Folder: %s\n' "$output_dir"
 printf 'Format: %s (bez dodatkowej stratnej kompresji)\n' "$format_label"
 printf 'Metadane: tagi; %s\n' "$cover_note"
 printf 'Nazwy: Wykonawca - Tytuł.%s (bez numeru playlisty)\n' "$audio_format"
@@ -190,13 +206,17 @@ printf '\nPobieranie...\n\n'
 # Separate archives let users get both WAV and FLAC from the same playlist.
 # WAV gets a JPG beside the audio: FFmpeg's WAV muxer cannot embed cover art.
 yt_args=(
-  --yes-playlist
   --ignore-errors
   --remote-components ejs:github
   -f bestaudio
   -x --audio-format "$audio_format"
   --embed-metadata
 )
+if [ "$media_type" = playlist ]; then
+  yt_args+=(--yes-playlist)
+else
+  yt_args+=(--no-playlist)
+fi
 if [ "$audio_format" = flac ]; then
   yt_args+=(--embed-thumbnail)
 else
@@ -214,7 +234,7 @@ if [ "$rekordbox_mode" -eq 1 ]; then
   trap 'rm -f -- "$manifest"' EXIT
   yt_args+=(--print-to-file 'after_move:%(filepath)s' "$manifest")
 fi
-yt_args+=("$playlist_url")
+yt_args+=("$media_url")
 
 if yt-dlp "${yt_args[@]}"; then
   printf '\nZakończono. Pliki: %s\n' "$output_dir"
