@@ -1,6 +1,6 @@
 # ytmscrap
 
-Proste CLI do pobierania **całych playlist z YouTube Music** do plików **WAV lub FLAC** z metadanymi i okładkami, gotowych do importu w Rekordbox. Tryb Rekordbox przycina szerokie miniatury YouTube do formatu 1:1. Narzędzie potrafi też wyszukać gatunek `Genre` na podstawie MusicBrainz i Deezer. Działa w **Git Bash na Windows 10/11** i w terminalu **macOS**.
+Proste CLI do pobierania **pojedynczych utworów i całych playlist z YouTube oraz YouTube Music** do plików **WAV lub FLAC** z metadanymi i okładkami, gotowych do importu w Rekordbox. Tryb Rekordbox przycina szerokie miniatury YouTube do formatu 1:1. Narzędzie potrafi też wyszukać gatunek `Genre` na podstawie MusicBrainz i Deezer. Działa w **Git Bash na Windows 10/11** i w terminalu **macOS**.
 
 > **Jakość:** YouTube Music dostarcza audio skompresowane stratnie (AAC/Opus). WAV i FLAC powstają z tego samego źródła i **nie poprawiają jego jakości**. WAV zapisuje nieskompresowany PCM, a FLAC kompresuje bezstratnie, więc oba brzmią tak samo. WAV zajmuje zwykle więcej miejsca. Pobieraj tylko materiały, do których masz prawa lub zgodę.
 
@@ -60,13 +60,14 @@ Przykładowe pytania:
 Spotify -> YouTube Music: https://www.tunemymusic.com/
 
 Gdzie zapisać? (Enter lub ./ = bieżący katalog): ./DJ
-Link playlisty YouTube Music: https://music.youtube.com/playlist?list=PLQLDyACIOtUw
+Link utworu lub playlisty YouTube / YouTube Music: https://music.youtube.com/playlist?list=PLQLDyACIOtUw
 
 Wybierz format audio:
   1) WAV  - bez kompresji, wieksze pliki (jakosc zrodla YouTube)
   2) FLAC - bezstratna kompresja, mniejsze pliki [domyslnie]
 Format [1/2] (Enter = FLAC): 1
 
+Źródło: playlista
 Folder: .../DJ
 Format: WAV (bez dodatkowej stratnej kompresji)
 Metadane: tagi; osobny plik JPG
@@ -79,17 +80,58 @@ Automatycznie uzupełnić gatunki Genre? [T/n]: t
 
 Zostaw pierwsze pole **puste** lub wpisz `./`, aby zapisać pliki tam, gdzie w danej chwili pracuje terminal. Możesz też podać pełną ścieżkę. W Windows Git Bash działa zapis typu `C:\Music\DJ`.
 
-Możesz podać URL od razu (folder nadal wybierzesz przez pytanie):
+Możesz podać link do utworu lub playlisty od razu (folder nadal wybierzesz przez pytanie):
 
 ```bash
 ytmscrap "https://music.youtube.com/playlist?list=PLQLDyACIOtUw"
 ```
 
+### Pobieranie jednej piosenki
+
+Uruchom `ytmscrap`, wybierz folder i wklej link do **pojedynczego utworu** zamiast playlisty:
+
+```text
+$ ytmscrap
+Gdzie zapisać? (Enter lub ./ = bieżący katalog): ./
+Link utworu lub playlisty YouTube / YouTube Music: https://music.youtube.com/watch?v=BaW_jenozKcj
+
+Wybierz format audio:
+  1) WAV
+  2) FLAC [domyślnie]
+Format [1/2] (Enter = FLAC): 2
+
+Źródło: pojedynczy utwór
+...
+```
+
+Możesz też podać link od razu (na macOS, w Git Bash lub na Windows):
+
+```bash
+# YouTube Music
+ytmscrap "https://music.youtube.com/watch?v=BaW_jenozKcj"
+
+# YouTube
+ytmscrap "https://www.youtube.com/watch?v=BaW_jenozKcj"
+
+# Krótki link
+ytmscrap "https://youtu.be/BaW_jenozKcj"
+
+# Jedna piosenka, nawet gdy URL zawiera list=...
+ytmscrap "https://www.youtube.com/watch?v=BaW_jenozKcj&list=PLQLDyACIOtUw"
+
+# Jedna piosenka i tryb Rekordbox
+ytmscrap --rekordbox "https://music.youtube.com/watch?v=BaW_jenozKcj"
+```
+
+Dla linków do utworów program używa `--no-playlist`, dzięki czemu **nie pobierze całej playlisty** nawet wtedy, gdy link zawiera parametr `list`. Adresy `/playlist?list=...` nadal pobierają całą playlistę za pomocą `--yes-playlist`. Obsługuje też linki `/shorts/...` i `/live/...`.
+
+W obu trybach dostępne są WAV/FLAC, metadane, okładki i opcjonalne uzupełnianie gatunków. Pobierany jest dźwięk z podanego filmu, więc jego jakość i tytuł zależą od źródła YouTube.
+
 Aby **przenieść playlistę ze Spotify do YouTube Music**, skorzystaj z: **https://www.tunemymusic.com/**. Ten link pojawia się też przy każdym uruchomieniu skryptu.
 
 ## Co robi program
 
-- Pobiera najlepszy strumień audio udostępniony `yt-dlp` z YouTube Music.
+- Pobiera najlepszy dostępny strumień audio udostępniony `yt-dlp` z pojedynczego filmu lub całej playlisty YouTube / YouTube Music.
 - Przed pobraniem pyta o WAV (nieskompresowany PCM) lub FLAC (bezstratna kompresja, domyślnie); konwertuje za pomocą FFmpeg.
 - FLAC: osadza dostępne tagi i okładkę w pliku. WAV: osadza dostępne tagi i zapisuje okładkę jako osobny JPG, ponieważ osadzanie grafiki w WAV nie jest obsługiwane w tym trybie. Część aplikacji może ignorować metadane WAV.
 - Nadaje nazwy `Artysta - Tytuł.wav` lub `Artysta - Tytuł.flac`, bez numeru pozycji na playliście.
