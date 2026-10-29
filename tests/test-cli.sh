@@ -74,4 +74,51 @@ rm -f "$tmp/args.txt"
 printf '%s\n%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://music.youtube.com/playlist?list=PLQLDyACIOtUw' '2' '' 't' | bash "$root/ytmscrap" > /dev/null 2>&1
 grep -Fqx -- '--print-to-file' "$tmp/args.txt"
 
-printf 'PASS: WAV, FLAC, paths, metadata, thumbnails, archives, URL validation and cancel\n'
+# Playlist URLs must download the whole playlist (not just one video).
+rm -f "$tmp/args.txt"
+printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://music.youtube.com/playlist?list=PLQLDyACIOtUw' 2 '' n n | bash "$root/ytmscrap" > /dev/null 2>&1
+grep -Fqx -- '--yes-playlist' "$tmp/args.txt"
+if grep -Fqx -- '--no-playlist' "$tmp/args.txt"; then echo 'FAIL: playlist treated as song' >&2; exit 1; fi
+
+# Direct song links must not expand a watch URL to the attached playlist.
+assert_song() {
+  local url=$1
+  rm -f "$tmp/args.txt"
+  output_song=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$tmp/My Music" "$url" 2 '' n n | bash "$root/ytmscrap" 2>&1)
+  grep -Fqx -- '--no-playlist' "$tmp/args.txt"
+  grep -Fqx -- '--embed-metadata' "$tmp/args.txt"
+  grep -Fqx -- '--embed-thumbnail' "$tmp/args.txt"
+  grep -Fqx -- "$url" "$tmp/args.txt"
+  if grep -Fqx -- '--yes-playlist' "$tmp/args.txt"; then echo "FAIL: song URL expanded into a playlist: $url" >&2; exit 1; fi
+  [[ "$output_song" == *'Źródło: pojedynczy utwór'* ]]
+}
+assert_song 'https://music.youtube.com/watch?v=BaW_jenozKcj'
+assert_song 'https://www.youtube.com/watch?v=BaW_jenozKcj&list=PLQLDyACIOtUw'
+assert_song 'https://m.youtube.com/watch?v=BaW_jenozKcj&si=test'
+assert_song 'https://youtu.be/BaW_jenozKcj?si=test'
+assert_song 'https://www.youtube.com/shorts/BaW_jenozKcj'
+assert_song 'https://www.youtube.com/live/BaW_jenozKcj'
+
+# Positional URL works without a link prompt.
+rm -f "$tmp/args.txt"
+printf '%s\n%s\n%s\n%s\n%s\n' "$tmp/My Music" 1 '' n n | bash "$root/ytmscrap" 'https://youtube.com/watch?v=BaW_jenozKcj' > /dev/null 2>&1
+grep -Fqx -- '--no-playlist' "$tmp/args.txt"
+grep -Fqx -- 'wav' "$tmp/args.txt"
+
+# Rekordbox option must work for direct video links too.
+rm -f "$tmp/args.txt"
+output_single_rb=$(printf '%s\n%s\n%s\n%s\n' "$tmp/My Music" 2 '' n | bash "$root/ytmscrap" --rekordbox 'https://music.youtube.com/watch?v=BaW_jenozKcj' 2>&1)
+grep -Fqx -- '--no-playlist' "$tmp/args.txt"
+grep -Fqx -- '--print-to-file' "$tmp/args.txt"
+[[ "$output_single_rb" == *'Brak nowych utworów'* ]]
+
+# Reject unsupported sites, malformed video IDs and a watch URL with only list=.
+for invalid in 'https://example.com/watch?v=BaW_jenozKcj' 'https://music.youtube.com/watch?list=PLQLDyACIOtUw' 'https://youtu.be/short'; do
+  rm -f "$tmp/args.txt"
+  if printf '%s\n%s\n' "$tmp/My Music" "$invalid" | bash "$root/ytmscrap" > /dev/null 2>&1; then
+    echo "FAIL: invalid URL accepted: $invalid" >&2; exit 1
+  fi
+  [ ! -f "$tmp/args.txt" ]
+done
+
+printf 'PASS: playlists, single songs, WAV, FLAC, Rekordbox, metadata, URL validation and cancel\n'
