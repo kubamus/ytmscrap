@@ -93,7 +93,7 @@ Uruchom `ytmscrap`, wybierz folder i wklej link do **pojedynczego utworu** zamia
 ```text
 $ ytmscrap
 Gdzie zapisać? (Enter lub ./ = bieżący katalog): ./
-Link utworu lub playlisty YouTube / YouTube Music: https://music.youtube.com/watch?v=BaW_jenozKcj
+Link utworu lub playlisty YouTube / YouTube Music: https://music.youtube.com/watch?v=BaW_jenozKc
 
 Wybierz format audio:
   1) WAV
@@ -108,19 +108,19 @@ Możesz też podać link od razu (na macOS, w Git Bash lub na Windows):
 
 ```bash
 # YouTube Music
-ytmscrap "https://music.youtube.com/watch?v=BaW_jenozKcj"
+ytmscrap "https://music.youtube.com/watch?v=BaW_jenozKc"
 
 # YouTube
-ytmscrap "https://www.youtube.com/watch?v=BaW_jenozKcj"
+ytmscrap "https://www.youtube.com/watch?v=BaW_jenozKc"
 
 # Krótki link
-ytmscrap "https://youtu.be/BaW_jenozKcj"
+ytmscrap "https://youtu.be/BaW_jenozKc"
 
 # Jedna piosenka, nawet gdy URL zawiera list=...
-ytmscrap "https://www.youtube.com/watch?v=BaW_jenozKcj&list=PLQLDyACIOtUw"
+ytmscrap "https://www.youtube.com/watch?v=BaW_jenozKc&list=PLQLDyACIOtUw"
 
 # Jedna piosenka i tryb Rekordbox
-ytmscrap --rekordbox "https://music.youtube.com/watch?v=BaW_jenozKcj"
+ytmscrap --rekordbox "https://music.youtube.com/watch?v=BaW_jenozKc"
 ```
 
 Dla linków do utworów program używa `--no-playlist`, dzięki czemu **nie pobierze całej playlisty** nawet wtedy, gdy link zawiera parametr `list`. Adresy `/playlist?list=...` nadal pobierają całą playlistę za pomocą `--yes-playlist`. Obsługuje też linki `/shorts/...` i `/live/...`.
