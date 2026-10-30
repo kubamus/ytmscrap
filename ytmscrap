@@ -78,8 +78,9 @@ update_self() {
     return 1
   }
   printf '[ytmscrap] Pobieranie najnowszej wersji instalatora...\n'
-  if ! curl --fail --location --show-error --silent --retry 2 --output "$tmp_installer" \
-      'https://raw.githubusercontent.com/kubamus/ytmscrap/main/install.sh'; then
+  if ! curl --fail --location --show-error --silent --retry 2 \
+      -H 'Cache-Control: no-cache' --output "$tmp_installer" \
+      "https://raw.githubusercontent.com/kubamus/ytmscrap/main/install.sh?refresh=$(date +%s)-$"; then
     printf '[BŁĄD] Nie można pobrać instalatora. Program pozostał bez zmian.\n' >&2
     rm -f -- "$tmp_installer"
     return 1
