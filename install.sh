@@ -21,11 +21,15 @@ if [ -n "$remote_repo" ]; then
   tmp_rekordbox=$(mktemp)
   trap 'rm -f "$tmp_script" "$tmp_helper" "$tmp_rekordbox"' EXIT
   info "Pobieranie CLI z publicznego repozytorium $remote_repo"
-  curl -fL --retry 2 --output "$tmp_script" "https://raw.githubusercontent.com/$remote_repo/main/ytmscrap"
+  # Distinct URLs avoid stale copies from the GitHub Raw CDN after new commits.
+  cache_key="$(date +%s)-$"
+  remote_base="https://raw.githubusercontent.com/$remote_repo/main"
+  curl -fL --retry 2 -H 'Cache-Control: no-cache' --output "$tmp_script" "$remote_base/ytmscrap?refresh=$cache_key"
+  bash -n "$tmp_script" || { err 'Pobrany plik ytmscrap ma błędną składnię.'; exit 1; }
   script_source=$tmp_script
-  curl -fL --retry 2 --output "$tmp_helper" "https://raw.githubusercontent.com/$remote_repo/main/genre_tagger.py"
+  curl -fL --retry 2 -H 'Cache-Control: no-cache' --output "$tmp_helper" "$remote_base/genre_tagger.py?refresh=$cache_key"
   helper_source=$tmp_helper
-  curl -fL --retry 2 --output "$tmp_rekordbox" "https://raw.githubusercontent.com/$remote_repo/main/rekordbox.py"
+  curl -fL --retry 2 -H 'Cache-Control: no-cache' --output "$tmp_rekordbox" "$remote_base/rekordbox.py?refresh=$cache_key"
   rekordbox_source=$tmp_rekordbox
 else
   base_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
