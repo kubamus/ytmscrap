@@ -69,11 +69,12 @@ while [ "$#" -gt 0 ]; do
     shift
     url=""
     for arg in "$@"; do url="$arg"; done
+    printf '%s\n' "$url" >> "$YTMSCRAP_CURL_LOG"
     case "$url" in
-      */install.sh) cp "$YTMSCRAP_REMOTE_INSTALLER" "$dest" ;;
-      */genre_tagger.py) cp "$YTMSCRAP_REMOTE_HELPER" "$dest" ;;
-      */rekordbox.py) cp "$YTMSCRAP_REMOTE_REKORDBOX" "$dest" ;;
-      */ytmscrap) cp "$YTMSCRAP_REMOTE_FIXTURE" "$dest" ;;
+      */install.sh*) cp "$YTMSCRAP_REMOTE_INSTALLER" "$dest" ;;
+      */genre_tagger.py*) cp "$YTMSCRAP_REMOTE_HELPER" "$dest" ;;
+      */rekordbox.py*) cp "$YTMSCRAP_REMOTE_REKORDBOX" "$dest" ;;
+      */ytmscrap*) cp "$YTMSCRAP_REMOTE_FIXTURE" "$dest" ;;
       *) exit 1 ;;
     esac
     exit 0
@@ -83,6 +84,7 @@ done
 exit 1
 FAKE
 chmod +x "$tmp/bin/curl"
+export YTMSCRAP_CURL_LOG="$tmp/curl-urls.log"
 export YTMSCRAP_REMOTE_INSTALLER="$root/install.sh"
 export YTMSCRAP_REMOTE_FIXTURE="$root/ytmscrap"
 export YTMSCRAP_REMOTE_HELPER="$root/genre_tagger.py"
@@ -93,6 +95,10 @@ HOME="$tmp/home" bash "$root/install.sh" demo-user/ytmscrap > "$tmp/remote.log"
 grep -Fq 'publicznego repozytorium demo-user/ytmscrap' "$tmp/remote.log"
 head -n 1 "$tmp/home/.local/share/ytmscrap/genre_tagger.py" | grep -Fq '#!/usr/bin/env python3'
 head -n 1 "$tmp/home/.local/share/ytmscrap/rekordbox.py" | grep -Fq '#!/usr/bin/env python3'
+# The installer must request a fresh URL for every downloaded source.
+grep -E 'ytmscrap\?refresh=[0-9]+' "$tmp/curl-urls.log"
+grep -E 'genre_tagger.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
+grep -E 'rekordbox.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
 
 # Self-update should invoke the official installer without touching the system,
 # replace CLI as well as both Python helper files, and work on both shells.
@@ -112,6 +118,7 @@ done
 export YTMSCRAP_MOCK_UNAME=Darwin
 HOME="$tmp/home" bash "$root/ytmscrap" update > "$tmp/update-alias.log"
 grep -Fq 'Aktualizacja zakończona' "$tmp/update-alias.log"
+grep -E 'install.sh\?refresh=[0-9]+' "$tmp/curl-urls.log"
 export YTMSCRAP_MOCK_CURL_FAIL=1
 if HOME="$tmp/home" bash "$root/ytmscrap" --update > "$tmp/update-failed.log" 2>&1; then
   echo 'FAIL: --update returned success despite download error' >&2
