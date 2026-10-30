@@ -13,6 +13,8 @@ Użycie:
   ytmscrap --fix-rekordbox [FOLDER] [--dry-run]  FLAC + kwadratowe okładki
   ytmscrap --fix-genres [FOLDER] [--dry-run]  Uzupełnij Genre w plikach FLAC/WAV
   ytmscrap --check-genres  Sprawdź połączenie z bazami gatunków
+  ytmscrap --update       Pobierz najnowszą wersję programu z GitHuba
+  ytmscrap update         To samo (krótsza forma)
   ytmscrap --check        Sprawdź wymagane narzędzia
   ytmscrap --help         Pokaż pomoc
 
@@ -65,7 +67,42 @@ python_helper() {
   "$py" "$helper" "$@"
 }
 
+update_self() {
+  if ! command -v curl >/dev/null 2>&1; then
+    printf '[BŁĄD] Brak curl. Zainstaluj curl albo uruchom instalator ręcznie.\n' >&2
+    return 1
+  fi
+  local tmp_installer
+  tmp_installer=$(mktemp) || {
+    printf '[BŁĄD] Nie można utworzyć pliku tymczasowego.\n' >&2
+    return 1
+  }
+  printf '[ytmscrap] Pobieranie najnowszej wersji instalatora...\n'
+  if ! curl --fail --location --show-error --silent --retry 2 --output "$tmp_installer" \
+      'https://raw.githubusercontent.com/kubamus/ytmscrap/main/install.sh'; then
+    printf '[BŁĄD] Nie można pobrać instalatora. Program pozostał bez zmian.\n' >&2
+    rm -f -- "$tmp_installer"
+    return 1
+  fi
+  if ! bash -n "$tmp_installer"; then
+    printf '[BŁĄD] Pobrany instalator jest niepoprawny. Przerwano aktualizację.\n' >&2
+    rm -f -- "$tmp_installer"
+    return 1
+  fi
+
+  # The official installer refreshes CLI + Python helpers and checks dependencies.
+  if bash "$tmp_installer" kubamus/ytmscrap; then
+    printf '\n[ytmscrap] Aktualizacja zakończona.\n'
+    rm -f -- "$tmp_installer"
+    return 0
+  fi
+  printf '\n[BŁĄD] Aktualizacja nie zakończyła się poprawnie. Sprawdź błędy instalatora.\n' >&2
+  rm -f -- "$tmp_installer"
+  return 1
+}
+
 case "${1:-}" in
+  --update|update) if [ "$#" -ne 1 ]; then usage >&2; exit 2; fi; update_self; exit $? ;;
   -h|--help) usage; exit 0 ;;
   --check) check_tools; exit $? ;;
   --fix-genres) shift; python_helper genre_tagger.py "$@"; exit $? ;;
