@@ -165,4 +165,12 @@ printf '%s\n%s\n%s\n%s\n' "$expected_output_dir" 2 '' n |
   PATH="$tmp/mock-win:$PATH" bash "$root/ytmscrap" --rekordbox 'https://www.youtube.com/watch?v=BaW_jenozKc' > /dev/null 2>&1
 grep -Fqx -- 'C:/Users/test/AppData/Local/Temp/manifest.txt' "$tmp/args.txt"
 
+# Update command should be visible in help before download starts.
+help_output=$(bash "$root/ytmscrap" --help)
+[[ "$help_output" == *'ytmscrap --update'* ]]
+[[ "$help_output" == *'ytmscrap update'* ]]
+if bash "$root/ytmscrap" --update extra > /dev/null 2>&1; then
+  echo 'FAIL: accepted invalid update arguments' >&2; exit 1
+fi
+
 printf 'PASS: native Windows output paths, single songs, WAV, FLAC, Rekordbox and validation\n'
