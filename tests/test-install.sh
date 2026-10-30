@@ -61,6 +61,7 @@ grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.bash_profile"
 # Remote one-line installer: mock curl to return the CLI script, no internet.
 cat > "$tmp/bin/curl" <<'FAKE'
 #!/usr/bin/env bash
+if [ "${YTMSCRAP_MOCK_CURL_FAIL:-0}" = 1 ]; then exit 22; fi
 while [ "$#" -gt 0 ]; do
   if [ "$1" = --output ]; then
     shift
@@ -69,6 +70,7 @@ while [ "$#" -gt 0 ]; do
     url=""
     for arg in "$@"; do url="$arg"; done
     case "$url" in
+      */install.sh) cp "$YTMSCRAP_REMOTE_INSTALLER" "$dest" ;;
       */genre_tagger.py) cp "$YTMSCRAP_REMOTE_HELPER" "$dest" ;;
       */rekordbox.py) cp "$YTMSCRAP_REMOTE_REKORDBOX" "$dest" ;;
       */ytmscrap) cp "$YTMSCRAP_REMOTE_FIXTURE" "$dest" ;;
@@ -81,6 +83,7 @@ done
 exit 1
 FAKE
 chmod +x "$tmp/bin/curl"
+export YTMSCRAP_REMOTE_INSTALLER="$root/install.sh"
 export YTMSCRAP_REMOTE_FIXTURE="$root/ytmscrap"
 export YTMSCRAP_REMOTE_HELPER="$root/genre_tagger.py"
 export YTMSCRAP_REMOTE_REKORDBOX="$root/rekordbox.py"
@@ -91,4 +94,31 @@ grep -Fq 'publicznego repozytorium demo-user/ytmscrap' "$tmp/remote.log"
 head -n 1 "$tmp/home/.local/share/ytmscrap/genre_tagger.py" | grep -Fq '#!/usr/bin/env python3'
 head -n 1 "$tmp/home/.local/share/ytmscrap/rekordbox.py" | grep -Fq '#!/usr/bin/env python3'
 
-echo 'PASS: Windows/macOS local/remote install, Python helper, PATH and repeat setup' 
+# Self-update should invoke the official installer without touching the system,
+# replace CLI as well as both Python helper files, and work on both shells.
+for mock_os in Darwin MINGW64_NT-10.0; do
+  export YTMSCRAP_MOCK_UNAME="$mock_os"
+  printf '#!/usr/bin/env bash\nprintf "old CLI\\n"\n' > "$tmp/home/.local/bin/ytmscrap"
+  printf 'old helper\n' > "$tmp/home/.local/share/ytmscrap/genre_tagger.py"
+  printf 'old rekordbox\n' > "$tmp/home/.local/share/ytmscrap/rekordbox.py"
+  HOME="$tmp/home" bash "$root/ytmscrap" --update > "$tmp/update.log"
+  cmp -s "$tmp/home/.local/bin/ytmscrap" "$root/ytmscrap"
+  cmp -s "$tmp/home/.local/share/ytmscrap/genre_tagger.py" "$root/genre_tagger.py"
+  cmp -s "$tmp/home/.local/share/ytmscrap/rekordbox.py" "$root/rekordbox.py"
+  grep -Fq 'Aktualizacja zakończona' "$tmp/update.log"
+done
+
+# The alias must work too and a failed download must not overwrite the CLI.
+export YTMSCRAP_MOCK_UNAME=Darwin
+HOME="$tmp/home" bash "$root/ytmscrap" update > "$tmp/update-alias.log"
+grep -Fq 'Aktualizacja zakończona' "$tmp/update-alias.log"
+export YTMSCRAP_MOCK_CURL_FAIL=1
+if HOME="$tmp/home" bash "$root/ytmscrap" --update > "$tmp/update-failed.log" 2>&1; then
+  echo 'FAIL: --update returned success despite download error' >&2
+  exit 1
+fi
+unset YTMSCRAP_MOCK_CURL_FAIL
+cmp -s "$tmp/home/.local/bin/ytmscrap" "$root/ytmscrap"
+
+echo 'PASS: Windows/macOS installer, self-update, remote helpers, PATH and failure handling'
+
