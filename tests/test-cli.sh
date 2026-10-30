@@ -6,6 +6,10 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/My Music"
 expected_output_dir=$(cd "$tmp/My Music" && pwd -P)
+expected_native_dir="$expected_output_dir"
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) expected_native_dir=$(cygpath -m "$expected_output_dir") ;;
+esac
 
 cat > "$tmp/bin/yt-dlp" <<'FAKE'
 #!/usr/bin/env bash
@@ -32,7 +36,7 @@ grep -Fqx -- '--download-archive' "$tmp/args.txt"
 grep -Fqx -- 'bestaudio' "$tmp/args.txt"
 grep -Fqx -- 'flac' "$tmp/args.txt"
 grep -Fqx -- '%(artist,uploader)s - %(track,title)s.%(ext)s' "$tmp/args.txt"
-grep -Fqx -- "$expected_output_dir/downloaded.txt" "$tmp/args.txt"
+grep -Fqx -- "$expected_native_dir/downloaded.txt" "$tmp/args.txt"
 [[ "$output" == *'https://www.tunemymusic.com/'* ]]
 
 [[ "$output" == *'Format: FLAC'* ]]
@@ -44,7 +48,7 @@ grep -Fqx -- 'wav' "$tmp/args.txt"
 grep -Fqx -- '--write-thumbnail' "$tmp/args.txt"
 grep -Fqx -- '--convert-thumbnails' "$tmp/args.txt"
 grep -Fqx -- 'jpg' "$tmp/args.txt"
-grep -Fqx -- "$expected_output_dir/downloaded-wav.txt" "$tmp/args.txt"
+grep -Fqx -- "$expected_native_dir/downloaded-wav.txt" "$tmp/args.txt"
 if grep -Fqx -- '--embed-thumbnail' "$tmp/args.txt"; then
   echo 'FAIL: WAV attempted to embed artwork' >&2; exit 1
 fi
@@ -121,4 +125,44 @@ for invalid in 'https://example.com/watch?v=BaW_jenozKc' 'https://music.youtube.
   [ ! -f "$tmp/args.txt" ]
 done
 
-printf 'PASS: playlists, single songs, WAV, FLAC, Rekordbox, metadata, URL validation and cancel\n'
+# Simulate native yt-dlp on Windows from either test runner. All paths passed
+# to yt-dlp.exe must be Windows paths, never Git Bash /c/... paths.
+mkdir -p "$tmp/mock-win"
+cat > "$tmp/mock-win/uname" <<'FAKE_UNAME'
+#!/usr/bin/env bash
+printf '%s\n' 'MINGW64_NT-10.0'
+FAKE_UNAME
+cat > "$tmp/mock-win/cygpath" <<'FAKE_CYGPATH'
+#!/usr/bin/env bash
+case "$1" in
+  -u) printf '%s\n' "$YTMSCRAP_TEST_POSIX_OUTPUT" ;;
+  -m)
+    if [ "$2" = "$YTMSCRAP_TEST_POSIX_OUTPUT" ]; then
+      printf 'C:/Users/test/Music/DJ Songs\n'
+    else
+      printf 'C:/Users/test/AppData/Local/Temp/manifest.txt\n'
+    fi
+    ;;
+  *) exit 3 ;;
+esac
+FAKE_CYGPATH
+chmod +x "$tmp/mock-win/uname" "$tmp/mock-win/cygpath"
+export YTMSCRAP_TEST_POSIX_OUTPUT="$expected_output_dir"
+
+rm -f "$tmp/args.txt"
+printf '%s\n%s\n%s\n%s\n%s\n%s\n' 'C:\\Users\\test\\Music\\DJ Songs' 'https://www.youtube.com/watch?v=BaW_jenozKc' 2 '' n n |
+  PATH="$tmp/mock-win:$PATH" bash "$root/ytmscrap" > /dev/null 2>&1
+grep -Fqx -- 'C:/Users/test/Music/DJ Songs' "$tmp/args.txt"
+grep -Fqx -- 'C:/Users/test/Music/DJ Songs/downloaded.txt' "$tmp/args.txt"
+grep -Fqx -- '--no-playlist' "$tmp/args.txt"
+if grep -Fqx -- "$expected_output_dir" "$tmp/args.txt"; then
+  echo 'FAIL: passed a POSIX path to Windows yt-dlp' >&2; exit 1
+fi
+
+# The manifest filename must be native as well when --rekordbox is enabled.
+rm -f "$tmp/args.txt"
+printf '%s\n%s\n%s\n%s\n' "$expected_output_dir" 2 '' n |
+  PATH="$tmp/mock-win:$PATH" bash "$root/ytmscrap" --rekordbox 'https://www.youtube.com/watch?v=BaW_jenozKc' > /dev/null 2>&1
+grep -Fqx -- 'C:/Users/test/AppData/Local/Temp/manifest.txt' "$tmp/args.txt"
+
+printf 'PASS: native Windows output paths, single songs, WAV, FLAC, Rekordbox and validation\n'
