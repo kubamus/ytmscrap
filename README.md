@@ -47,6 +47,24 @@ Instalacja `winget` może wymagać potwierdzenia zgód lub uprawnień systemu. J
 3. Instalator użyje Homebrew do instalacji brakujących `yt-dlp`, `ffmpeg`, `deno` i `python`, a następnie skonfiguruje `Mutagen` w osobnym środowisku. Jeśli Homebrew nie ma, spróbuje je zainstalować z oficjalnego instalatora (może wymagać hasła administratora i narzędzi Apple). Instaluje `ytmscrap` w `~/.local/bin` i aktualizuje PATH.
 4. Otwórz nowy terminal i wpisz `ytmscrap`. Jeśli chcesz uruchomić go w tym samym oknie, wykonaj `source ~/.zshrc`, a potem `ytmscrap --check`.
 
+### Aktualizacja CLI
+
+Po jednorazowym zainstalowaniu programu wystarczy wpisać w **Git Bash (Windows)** lub **Terminalu (macOS)**:
+
+```bash
+ytmscrap update
+```
+
+Możesz też użyć `ytmscrap --update`. Komenda pobiera aktualny instalator z publicznego repo `kubamus/ytmscrap`, aktualizuje **CLI, moduł gatunków i moduł Rekordbox** oraz sprawdza brakujące zależności. Nie kasuje pobranych plików, folderów ani historii `downloaded.txt`. Zainstalowane programy, które już działają (yt-dlp, FFmpeg, Deno), pozostają bez zmian; instalator nie wymusza ich aktualizacji.
+
+**Pierwsze uruchomienie:** starsza wersja `ytmscrap` nie zna jeszcze komendy `update`. Wykonaj poniższe polecenie tylko raz, aby ją dodać:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kubamus/ytmscrap/main/install.sh | bash -s -- kubamus/ytmscrap
+```
+
+Instalator uruchamia kod pobrany z GitHuba; przed aktualizacją możesz przejrzeć `install.sh` w repozytorium. Jeśli pobieranie się nie uda, `ytmscrap update` zgłosi błąd zamiast uruchamiać niepełny plik.
+
 ### Szybki start po instalacji
 
 ```bash
@@ -197,6 +215,7 @@ Uwaga: przy instalacji starszej wersji ponownie uruchom instalator, żeby pobra�
 ## Przydatne komendy
 
 ```bash
+ytmscrap update             # aktualizuj CLI i moduły z GitHuba
 ytmscrap --check-genres    # test połączenia z MusicBrainz i Deezer
 ytmscrap --fix-genres .    # napraw gatunki w istniejących plikach
 ytmscrap --help        # pomoc
