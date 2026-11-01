@@ -55,7 +55,7 @@ Po jednorazowym zainstalowaniu programu wystarczy wpisać w **Git Bash (Windows)
 ytmscrap update
 ```
 
-Możesz też użyć `ytmscrap --update`. Komenda pobiera aktualny instalator z publicznego repo `kubamus/ytmscrap`, aktualizuje **CLI, moduł gatunków i moduł Rekordbox** oraz sprawdza brakujące zależności. Nie kasuje pobranych plików, folderów ani historii `downloaded.txt`. Zainstalowane programy, które już działają (yt-dlp, FFmpeg, Deno), pozostają bez zmian; instalator nie wymusza ich aktualizacji.
+Możesz też użyć `ytmscrap --update`. Komenda pobiera aktualny instalator z publicznego repo `kubamus/ytmscrap`, aktualizuje **CLI, moduł gatunków, moduł Rekordbox i moduł proxy** oraz sprawdza brakujące zależności. Nie kasuje pobranych plików, folderów ani historii `downloaded.txt`. Zainstalowane programy, które już działają (yt-dlp, FFmpeg, Deno), pozostają bez zmian; instalator nie wymusza ich aktualizacji.
 
 **Pierwsze uruchomienie:** starsza wersja `ytmscrap` nie zna jeszcze komendy `update`. Wykonaj poniższe polecenie tylko raz, aby ją dodać:
 
@@ -179,21 +179,25 @@ ytmscrap --fix-rekordbox . --dry-run               # podgląd
 - MP3/Opus nie odzyskają jakości przy konwersji do FLAC. Zmiana grafiki w FLAC nie koduje dźwięku ponownie.
 - W rekordbox użyj Collection → Reload Tag, by odświeżyć miniatury.
 
-## Awaryjne darmowe proxy (opcjonalne)
+## Automatyczne darmowe proxy przy limitach YouTube
 
-Gdy YouTube odrzuca połączenie z Twojego IP (komunikat o bocie lub HTTP 429), możesz uruchomić:
+**Domyślnie włączone.** Program najpierw pobiera bez proxy. Jeśli YouTube zgłosi blokadę bota lub limit zapytań (np. HTTP 429), sam szuka publicznych proxy, sprawdza je równolegle i ponawia niedokończone pobieranie.
 
 ```bash
-ytmscrap --auto-proxy "https://www.youtube.com/watch?v=BaW_jenozKc"
-ytmscrap --auto-proxy --rekordbox "https://music.youtube.com/playlist?list=TWOJA_PLAYLISTA"
+ytmscrap "https://www.youtube.com/watch?v=BaW_jenozKc"
+ytmscrap --rekordbox "https://music.youtube.com/playlist?list=TWOJA_PLAYLISTA"
+
+# Wyłącz awaryjne proxy dla jednego uruchomienia:
+ytmscrap --no-auto-proxy "https://www.youtube.com/watch?v=BaW_jenozKc"
 ```
 
-- Bez tej flagi narzędzie **nie korzysta z proxy**. Z flagą najpierw pobiera normalnie; proxy uruchamia tylko przy błędzie związanym z blokadą YouTube.
+- **Nie trzeba podawać `--auto-proxy`.** Starsza flaga nadal działa, by nie psuć skryptów.
+- Proxy nie bierze udziału w zwykłych, udanych pobraniach. Tylko wykryty błąd limitu/bota uruchamia fallback.
 - Pobiera aktualne listy darmowych proxy HTTP z `monosans/proxy-list` i `maximilianfeix/free-proxy-list` na GitHubie. **Nie zapisuje stałej listy IP.**
-- Sprawdza do 48 adresów przez HTTPS, testując 12 równolegle; następnie do 16 serwerów przez `yt-dlp`, testując 6 równolegle. Może spróbować maksymalnie 3 działających proxy podczas pobierania.
-- Pobierane wcześniej pliki pozostają na dysku, a historia `downloaded.txt` pozwala pominąć gotowe utwory po ponowieniu playlisty.
-- Ten tryb nie przekazuje konfiguracji `yt-dlp` (np. cookies z konta) do publicznego proxy. Publiczne serwery bywają wolne lub niedostępne — **nie ma gwarancji**, że obejdą blokadę.
-- Dostawca publicznego proxy może zobaczyć IP użytkownika i host docelowy. Nie korzystaj z publicznych proxy do logowania lub przesyłania danych prywatnych.
+- Sprawdza do 48 adresów przez HTTPS, testując 12 równolegle; następnie do 16 przez `yt-dlp`, testując 6 równolegle. Może spróbować maksymalnie 3 działających proxy podczas pobierania.
+- Pliki już pobrane pozostają na dysku, a historia `downloaded.txt` pozwala pominąć gotowe utwory po ponowieniu playlisty.
+- Przez publiczne proxy program nie przekazuje konfiguracji `yt-dlp` (np. plików cookies). Nie ma gwarancji, że darmowe proxy zadziałają.
+- **Uwaga:** operator publicznego proxy może poznać Twój adres IP i odwiedzane hosty. Jeśli nie akceptujesz tego ryzyka, uruchamiaj `--no-auto-proxy`. Nie loguj się przez publiczne proxy.
 
 ## Diagnostyka połączenia z API gatunków
 
