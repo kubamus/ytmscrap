@@ -316,7 +316,58 @@ if [ "$rekordbox_mode" -eq 1 ]; then
 fi
 yt_args+=("$media_url")
 
-if yt-dlp "${yt_args[@]}"; then
+# --ignore-errors can return status 0 even when some playlist entries fail.
+# Capture messages so IP-related YouTube errors trigger fallback.
+direct_ok=0
+if yt-dlp "${yt_args[@]}" 2>&1 | tee "$download_log"; then
+  direct_ok=1
+fi
+bot_error='sign in to confirm you.?re not a bot|http error 429|too many requests'
+if grep -Eiq "$bot_error" "$download_log"; then
+  direct_ok=0
+  if [ "$auto_proxy" -eq 1 ]; then
+    printf '\n[Proxy] YouTube odrzucił połączenie. Szukam działających proxy...\n'
+    test_id=''
+    while IFS= read -r line; do
+      if [[ "$line" =~ \\[youtube\\][[:space:]]+([A-Za-z0-9_-]{11}) ]]; then
+        test_id="${BASH_REMATCH[1]}"
+        break
+      fi
+    done < "$download_log"
+    if [ -z "$test_id" ] && [ "$media_type" = song ]; then
+      if [[ "$media_url" =~ v=([A-Za-z0-9_-]{11}) ]] ||
+         [[ "$media_url" =~ youtu\\.be/([A-Za-z0-9_-]{11}) ]]; then
+        test_id="${BASH_REMATCH[1]}"
+      elif [[ "$media_url" =~ /(shorts|live)/([A-Za-z0-9_-]{11}) ]]; then
+        test_id="${BASH_REMATCH[2]}"
+      fi
+    fi
+    if [ -n "$test_id" ]; then
+      if python_helper proxy_fallback.py "https://www.youtube.com/watch?v=$test_id" > "$proxy_file"; then
+        while IFS= read -r proxy; do
+          printf '[Proxy] Próba pobierania przez %s\n' "$proxy"
+          : > "$download_log"
+          # Never pass user yt-dlp config (which may contain cookies)
+          # through an unknown public proxy.
+          if yt-dlp --ignore-config --proxy "$proxy" "${yt_args[@]}" 2>&1 | tee "$download_log"; then
+            if ! grep -Eiq "$bot_error" "$download_log"; then
+              direct_ok=1
+              break
+            fi
+          fi
+          printf '[Proxy] Próbuję następnego serwera.\n' >&2
+        done < "$proxy_file"
+      fi
+    else
+      printf '[Proxy] Brak ID filmu do testu proxy.\n' >&2
+    fi
+    if [ "$direct_ok" -eq 0 ]; then
+      printf '[Proxy] Brak działającego proxy. Zapisane pliki pozostały bez zmian.\n' >&2
+    fi
+  fi
+fi
+
+if [ "$direct_ok" -eq 1 ]; then
   printf '\nZakończono. Pliki: %s\n' "$download_dir"
   printf 'Uwaga: --ignore-errors pomija niedostępne utwory; sprawdź log powyżej.\n'
   if [ "$rekordbox_mode" -eq 1 ]; then
