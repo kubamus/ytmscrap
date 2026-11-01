@@ -73,7 +73,7 @@ python_helper() {
 # Read the version written after installation; allow use from a source checkout.
 version_source="$HOME/.local/share/ytmscrap/VERSION"
 if [ ! -f "$version_source" ]; then
-  version_source="$(cd -- "$(dirname -- "\${BASH_SOURCE[0]}")" && pwd -P)/VERSION"
+  version_source="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/VERSION"
 fi
 installed_version=0.0.0
 if [ -f "$version_source" ]; then
@@ -91,8 +91,8 @@ version_is_newer() {
   IFS=. read -r -a remote_parts <<< "$1"
   IFS=. read -r -a local_parts <<< "$2"
   for i in 0 1 2; do
-    if (( 10#\${remote_parts[$i]} > 10#\${local_parts[$i]} )); then return 0; fi
-    if (( 10#\${remote_parts[$i]} < 10#\${local_parts[$i]} )); then return 1; fi
+    if (( 10#${remote_parts[$i]} > 10#${local_parts[$i]} )); then return 0; fi
+    if (( 10#${remote_parts[$i]} < 10#${local_parts[$i]} )); then return 1; fi
   done
   return 1
 }
@@ -102,18 +102,18 @@ fetch_latest_version() {
   version=$(curl --fail --location --silent --show-error \
     --connect-timeout 2 --max-time 4 -H 'Cache-Control: no-cache' \
     "https://raw.githubusercontent.com/kubamus/ytmscrap/main/VERSION?refresh=$(date +%s)") || return 1
-  version=\${version//$'\r'/}
+  version=${version//$'\r'/}
   valid_version "$version" || return 1
   printf '%s\n' "$version"
 }
 
 # Check at most once per day. Failed network checks never block CLI usage.
 check_update_notice() {
-  [ "\${YTMSCRAP_NO_UPDATE_CHECK:-0}" = 1 ] && return 0
+  [ "${YTMSCRAP_NO_UPDATE_CHECK:-0}" = 1 ] && return 0
   command -v curl >/dev/null 2>&1 || return 0
   local now cache_dir cache_file checked_at='' latest=''
   now=$(date +%s)
-  cache_dir="\${XDG_CACHE_HOME:-$HOME/.cache}/ytmscrap"
+  cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/ytmscrap"
   cache_file="$cache_dir/update-check"
   if [ -r "$cache_file" ]; then
     read -r checked_at latest < "$cache_file" || :
