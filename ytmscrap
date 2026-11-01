@@ -102,7 +102,42 @@ fetch_latest_version() {
   version=$(curl --fail --location --silent --show-error \
     --connect-timeout 2 --max-time 4 -H 'Cache-Control: no-cache' \
     "https://raw.githubusercontent.com/kubamus/ytmscrap/main/VERSION?refresh=$(date +%s)") || return 1
-  version=\${version//  if ! command -v curl >/dev/null 2>&1; then
+  version=\${version//$'\r'/}
+  valid_version "$version" || return 1
+  printf '%s\n' "$version"
+}
+
+# Check at most once per day. Failed network checks never block CLI usage.
+check_update_notice() {
+  [ "\${YTMSCRAP_NO_UPDATE_CHECK:-0}" = 1 ] && return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  local now cache_dir cache_file checked_at='' latest=''
+  now=$(date +%s)
+  cache_dir="\${XDG_CACHE_HOME:-$HOME/.cache}/ytmscrap"
+  cache_file="$cache_dir/update-check"
+  if [ -r "$cache_file" ]; then
+    read -r checked_at latest < "$cache_file" || :
+  fi
+  if ! [[ "$checked_at" =~ ^[0-9]+$ ]] ||
+     (( now < checked_at || now - checked_at >= 86400 )); then
+    if latest=$(fetch_latest_version 2>/dev/null); then
+      mkdir -p -- "$cache_dir" 2>/dev/null &&
+        printf '%s %s\n' "$now" "$latest" > "$cache_file" || :
+    else
+      latest=''
+      mkdir -p -- "$cache_dir" 2>/dev/null &&
+        printf '%s unavailable\n' "$now" > "$cache_file" || :
+    fi
+  fi
+  if version_is_newer "$latest" "$installed_version"; then
+    printf '[ytmscrap] Dostępna aktualizacja: v%s (masz v%s). Uruchom: ytmscrap update\n' \
+      "$latest" "$installed_version" >&2
+  fi
+  return 0
+}
+
+update_self() {
+  if ! command -v curl >/dev/null 2>&1; then
     printf '[BŁĄD] Brak curl. Zainstaluj curl albo uruchom instalator ręcznie.\n' >&2
     return 1
   fi
@@ -151,365 +186,6 @@ case "${1:-}" in
 esac
 check_update_notice
 case "${1:-}" in
-  -h|--help) usage; exit 0 ;;
-  --check) check_tools; exit $? ;;
-  --fix-genres) shift; python_helper genre_tagger.py "$@"; exit $? ;;
-  --check-genres) python_helper genre_tagger.py --check-network; exit $? ;;
-  --fix-rekordbox) shift; python_helper rekordbox.py "$@"; exit $? ;;
-esac
-download_rekordbox=ask
-# Direct downloads are always attempted first; fallback is enabled by default.
-auto_proxy=1
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --rekordbox) download_rekordbox=yes; shift ;;
-    --auto-proxy) auto_proxy=1; shift ;; # Kept for existing scripts.
-    --no-auto-proxy) auto_proxy=0; shift ;;
-    *) break ;;
-  esac
-done
-if [ "$#" -gt 1 ]; then
-  usage >&2
-  exit 2
-fi
-
-printf '\n=== ytmscrap | YouTube Music -> WAV / FLAC ===\n'
-printf 'Spotify -> YouTube Music: https://www.tunemymusic.com/\n\n'
-
-check_tools || exit 1
-printf '\n'
-
-if ! IFS= read -r -p 'Gdzie zapisać? (Enter lub ./ = bieżący katalog): ' output_dir; then
-  printf '\nAnulowano.\n'
-  exit 1
-fi
-output_dir=${output_dir:-.}
-
-# Windows drive paths work in Git Bash (C:\\Music, D:/DJ).
-case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*)
-    if [[ "$output_dir" =~ ^[A-Za-z]:[\\/] ]] && command -v cygpath >/dev/null 2>&1; then
-      output_dir=$(cygpath -u "$output_dir")
-    fi
-    ;;
-esac
-case "$output_dir" in
-  '~') output_dir=$HOME ;;
-  '~/'*) output_dir="$HOME/${output_dir#\~/}" ;;
-esac
-
-if ! mkdir -p -- "$output_dir"; then
-  printf 'Nie można utworzyć folderu: %s\n' "$output_dir" >&2
-  exit 1
-fi
-output_dir=$(cd -- "$output_dir" && pwd -P)
-
-# Git Bash exposes /c/Users/... paths, but the winget yt-dlp executable
-# uses native Windows paths. Passing POSIX paths to it can redirect output
-# to the current drive root (e.g. \Song.webp) or another wrong folder.
-download_dir="$output_dir"
-is_windows=0
-case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*)
-    is_windows=1
-    if ! command -v cygpath >/dev/null 2>&1; then
-      printf '[BŁĄD] Brak cygpath. Uruchom program w Git Bash.\n' >&2
-      exit 1
-    fi
-    download_dir=$(cygpath -m "$output_dir")
-    if [[ ! "$download_dir" =~ ^[A-Za-z]:/ && ! "$download_dir" =~ ^// ]]; then
-      printf '[BŁĄD] Nie mogę ustalić ścieżki Windows: %s\n' "$output_dir" >&2
-      exit 1
-    fi
-    ;;
-esac
-
-# Check write access before launching yt-dlp.
-if ! write_test=$(mktemp "$output_dir/.ytmscrap-write-XXXXXXXX" 2>/dev/null); then
-  printf '[BŁĄD] Brak uprawnień zapisu w folderze: %s\n' "$output_dir" >&2
-  exit 1
-fi
-rm -f -- "$write_test"
-
-media_url=${1:-}
-while [ -z "$media_url" ]; do
-  if ! IFS= read -r -p 'Link utworu lub playlisty YouTube / YouTube Music: ' media_url; then
-    printf '\nAnulowano.\n'
-    exit 1
-  fi
-done
-
-# Distinguish playlist pages from video links. A watch?v=...&list=... URL
-# must download ONLY the linked song, not the entire related playlist.
-media_type=''
-if [[ "$media_url" =~ ^https://(music\.youtube\.com|www\.youtube\.com|m\.youtube\.com|youtube\.com)/playlist\? ]] &&
-   [[ "$media_url" =~ [\?\&]list=[A-Za-z0-9_-]+([\&\#]|$) ]]; then
-  media_type=playlist
-elif [[ "$media_url" =~ ^https://(music\.youtube\.com|www\.youtube\.com|m\.youtube\.com|youtube\.com)/watch\? ]] &&
-     [[ "$media_url" =~ [\?\&]v=[A-Za-z0-9_-]{11}([\&\#]|$) ]]; then
-  media_type=song
-elif [[ "$media_url" =~ ^https://(www\.)?youtu\.be/[A-Za-z0-9_-]{11}([/?\#]|$) ]]; then
-  media_type=song
-elif [[ "$media_url" =~ ^https://(www\.|m\.)?youtube\.com/(shorts|live)/[A-Za-z0-9_-]{11}([/?\#]|$) ]]; then
-  media_type=song
-else
-  printf 'Niepoprawny link. Podaj adres utworu lub playlisty z YouTube / YouTube Music.\n' >&2
-  exit 2
-fi
-
-# FLAC remains the default for existing users.
-printf '\nWybierz format audio:\n'
-printf '  1) WAV  - bez kompresji, wieksze pliki (jakosc zrodla YouTube)\n'
-printf '  2) FLAC - bezstratna kompresja, mniejsze pliki [domyslnie]\n'
-while :; do
-  if ! IFS= read -r -p 'Format [1/2] (Enter = FLAC): ' format_choice; then
-    printf '\nAnulowano.\n'
-    exit 1
-  fi
-  case "$format_choice" in
-    1|wav|WAV|Wav) audio_format=wav; break ;;
-    ''|2|flac|FLAC|Flac) audio_format=flac; break ;;
-    *) printf 'Niepoprawny wybor. Wpisz 1 (WAV) lub 2 (FLAC).\n' >&2 ;;
-  esac
-done
-
-if [ "$audio_format" = wav ]; then
-  format_label=WAV
-  archive_file="$download_dir/downloaded-wav.txt"
-  cover_note='osobny plik JPG (WAV nie obsluguje osadzania okladek w tym trybie)'
-else
-  format_label=FLAC
-  archive_file="$download_dir/downloaded.txt"
-  cover_note='okladka osadzona w FLAC'
-fi
-
-if [ "$media_type" = song ]; then
-  printf '\nŹródło: pojedynczy utwór\n'
-else
-  printf '\nŹródło: playlista\n'
-fi
-printf 'Folder: %s\n' "$download_dir"
-printf 'Format: %s (bez dodatkowej stratnej kompresji)\n' "$format_label"
-printf 'Metadane: tagi; %s\n' "$cover_note"
-printf 'Nazwy: Wykonawca - Tytuł.%s (bez numeru playlisty)\n' "$audio_format"
-printf 'Historia: %s\n' "$archive_file"
-if [ "$auto_proxy" -eq 1 ]; then
-  printf 'Proxy: awaryjne po błędzie YouTube.\n'
-fi
-printf '\n'
-
-if ! IFS= read -r -p 'Rozpocząć pobieranie? [T/n]: ' confirmation; then
-  printf '\nAnulowano.\n'
-  exit 1
-fi
-case "$confirmation" in
-  n|N|nie|Nie|NIE|no|No|NO) printf 'Anulowano.\n'; exit 0 ;;
-esac
-
-rekordbox_mode=0
-if [ "$download_rekordbox" = yes ]; then
-  rekordbox_mode=1
-else
-  printf '\nPrzygotować pliki dla rekordbox (FLAC + kwadratowe okładki 1:1)? [t/N]: '
-  if ! IFS= read -r rekordbox_answer; then rekordbox_answer=''; fi
-  case "$rekordbox_answer" in
-    t|T|tak|Tak|TAK|y|Y|yes|Yes|YES) rekordbox_mode=1 ;;
-  esac
-fi
-if [ "$rekordbox_mode" -eq 1 ]; then
-  printf 'Tryb rekordbox: FLAC z kwadratową okładką.\n'
-  if [ "$audio_format" = wav ]; then
-    printf 'WAV pozostanie bez zmian; powstanie obok niego wersja FLAC.\n'
-  fi
-fi
-
-printf '\nPobieranie...\n\n'
-
-# Separate archives let users get both WAV and FLAC from the same playlist.
-# WAV gets a JPG beside the audio: FFmpeg's WAV muxer cannot embed cover art.
-yt_args=(
-  --ignore-errors
-  --remote-components ejs:github
-  -f bestaudio
-  -x --audio-format "$audio_format"
-  --embed-metadata
-)
-if [ "$media_type" = playlist ]; then
-  yt_args+=(--yes-playlist)
-else
-  yt_args+=(--no-playlist)
-fi
-if [ "$audio_format" = flac ]; then
-  yt_args+=(--embed-thumbnail)
-else
-  yt_args+=(--write-thumbnail --convert-thumbnails jpg)
-fi
-yt_args+=(
-  --download-archive "$archive_file"
-  -o '%(artist,uploader)s - %(track,title)s.%(ext)s'
-  -P "$download_dir"
-)
-
-manifest=''
-download_log=$(mktemp)
-proxy_file=$(mktemp)
-trap 'rm -f -- "$manifest" "$download_log" "$proxy_file"' EXIT
-if [ "$rekordbox_mode" -eq 1 ]; then
-  manifest=$(mktemp)
-  native_manifest="$manifest"
-  if [ "$is_windows" -eq 1 ]; then
-    native_manifest=$(cygpath -m "$manifest")
-  fi
-  yt_args+=(--print-to-file 'after_move:%(filepath)s' "$native_manifest")
-fi
-yt_args+=("$media_url")
-
-# --ignore-errors can return status 0 even when some playlist entries fail.
-# Capture messages so IP-related YouTube errors trigger fallback.
-direct_ok=0
-if yt-dlp "${yt_args[@]}" 2>&1 | tee "$download_log"; then
-  direct_ok=1
-fi
-bot_error='sign in to confirm.*not a bot|http error 429|too many requests|rate[- ]limit(ed)?'
-if grep -Eiq "$bot_error" "$download_log"; then
-  direct_ok=0
-  if [ "$auto_proxy" -eq 1 ]; then
-    printf '\n[Proxy] YouTube odrzucił połączenie. Szukam działających proxy...\n'
-    test_id=''
-    while IFS= read -r line; do
-      if [[ "$line" =~ \[youtube\][[:space:]]+([A-Za-z0-9_-]{11}) ]]; then
-        test_id="${BASH_REMATCH[1]}"
-        break
-      fi
-    done < "$download_log"
-    if [ -z "$test_id" ] && [ "$media_type" = song ]; then
-      if [[ "$media_url" =~ v=([A-Za-z0-9_-]{11}) ]] ||
-         [[ "$media_url" =~ youtu\.be/([A-Za-z0-9_-]{11}) ]]; then
-        test_id="${BASH_REMATCH[1]}"
-      elif [[ "$media_url" =~ /(shorts|live)/([A-Za-z0-9_-]{11}) ]]; then
-        test_id="${BASH_REMATCH[2]}"
-      fi
-    fi
-    if [ -n "$test_id" ]; then
-      if python_helper proxy_fallback.py "https://www.youtube.com/watch?v=$test_id" > "$proxy_file"; then
-        while IFS= read -r proxy; do
-          printf '[Proxy] Próba pobierania przez %s\n' "$proxy"
-          : > "$download_log"
-          # Never pass user yt-dlp config (which may contain cookies)
-          # through an unknown public proxy.
-          if yt-dlp --ignore-config --proxy "$proxy" "${yt_args[@]}" 2>&1 | tee "$download_log"; then
-            if ! grep -Eiq "$bot_error" "$download_log"; then
-              direct_ok=1
-              break
-            fi
-          fi
-          printf '[Proxy] Próbuję następnego serwera.\n' >&2
-        done < "$proxy_file"
-      fi
-    else
-      printf '[Proxy] Brak ID filmu do testu proxy.\n' >&2
-    fi
-    if [ "$direct_ok" -eq 0 ]; then
-      printf '[Proxy] Brak działającego proxy. Zapisane pliki pozostały bez zmian.\n' >&2
-    fi
-  fi
-fi
-
-if [ "$direct_ok" -eq 1 ]; then
-  printf '\nZakończono. Pliki: %s\n' "$download_dir"
-  printf 'Uwaga: --ignore-errors pomija niedostępne utwory; sprawdź log powyżej.\n'
-  if [ "$rekordbox_mode" -eq 1 ]; then
-    if [ -s "$manifest" ]; then
-      python_helper rekordbox.py --from-list "$native_manifest" ||
-        printf '[UWAGA] Część plików nie została przygotowana dla rekordbox. Uruchom ytmscrap --fix-rekordbox.\n' >&2
-    else
-      printf '[Rekordbox] Brak nowych utworów (historia pobrań). Dla istniejących: ytmscrap --fix-rekordbox .\n'
-    fi
-  fi
-  printf '\nAutomatycznie uzupełnić gatunki Genre? [T/n]: '
-  if IFS= read -r fill_genres; then
-    case "$fill_genres" in
-      n|N|nie|Nie|NIE|no|No|NO) ;;
-      *) python_helper genre_tagger.py "$download_dir" || printf '[UWAGA] Genre nie zostały w pełni uzupełnione. Pliki audio są zachowane.\n' >&2 ;;
-    esac
-  else
-    printf '\n[INFO] Pomijam uzupełnianie gatunków (brak wejścia).\n'
-  fi
-else
-  printf '\nPobieranie przerwane — sprawdź błędy powyżej.\n' >&2
-  exit 1
-fi
-\r'/}
-  valid_version "$version" || return 1
-  printf '%s\n' "$version"
-}
-
-# Check at most once per day. Failed network checks never block CLI usage.
-check_update_notice() {
-  [ "\${YTMSCRAP_NO_UPDATE_CHECK:-0}" = 1 ] && return 0
-  command -v curl >/dev/null 2>&1 || return 0
-  local now cache_dir cache_file checked_at='' latest=''
-  now=$(date +%s)
-  cache_dir="\${XDG_CACHE_HOME:-$HOME/.cache}/ytmscrap"
-  cache_file="$cache_dir/update-check"
-  if [ -r "$cache_file" ]; then
-    read -r checked_at latest < "$cache_file" || :
-  fi
-  if ! [[ "$checked_at" =~ ^[0-9]+$ ]] ||
-     (( now < checked_at || now - checked_at >= 86400 )); then
-    if latest=$(fetch_latest_version 2>/dev/null); then
-      mkdir -p -- "$cache_dir" 2>/dev/null &&
-        printf '%s %s\n' "$now" "$latest" > "$cache_file" || :
-    else
-      latest=''
-      mkdir -p -- "$cache_dir" 2>/dev/null &&
-        printf '%s unavailable\n' "$now" > "$cache_file" || :
-    fi
-  fi
-  if version_is_newer "$latest" "$installed_version"; then
-    printf '[ytmscrap] Dostępna aktualizacja: v%s (masz v%s). Uruchom: ytmscrap update\n' \
-      "$latest" "$installed_version" >&2
-  fi
-  return 0
-}
-
-update_self() {
-  if ! command -v curl >/dev/null 2>&1; then
-    printf '[BŁĄD] Brak curl. Zainstaluj curl albo uruchom instalator ręcznie.\n' >&2
-    return 1
-  fi
-  local tmp_installer
-  tmp_installer=$(mktemp) || {
-    printf '[BŁĄD] Nie można utworzyć pliku tymczasowego.\n' >&2
-    return 1
-  }
-  printf '[ytmscrap] Pobieranie najnowszej wersji instalatora...\n'
-  if ! curl --fail --location --show-error --silent --retry 2 \
-      -H 'Cache-Control: no-cache' --output "$tmp_installer" \
-      "https://raw.githubusercontent.com/kubamus/ytmscrap/main/install.sh?refresh=$(date +%s)-$"; then
-    printf '[BŁĄD] Nie można pobrać instalatora. Program pozostał bez zmian.\n' >&2
-    rm -f -- "$tmp_installer"
-    return 1
-  fi
-  if ! bash -n "$tmp_installer"; then
-    printf '[BŁĄD] Pobrany instalator jest niepoprawny. Przerwano aktualizację.\n' >&2
-    rm -f -- "$tmp_installer"
-    return 1
-  fi
-
-  # The official installer refreshes CLI + Python helpers and checks dependencies.
-  if bash "$tmp_installer" kubamus/ytmscrap; then
-    printf '\n[ytmscrap] Aktualizacja zakończona.\n'
-    rm -f -- "$tmp_installer"
-    return 0
-  fi
-  printf '\n[BŁĄD] Aktualizacja nie zakończyła się poprawnie. Sprawdź błędy instalatora.\n' >&2
-  rm -f -- "$tmp_installer"
-  return 1
-}
-
-case "${1:-}" in
-  --update|update) if [ "$#" -ne 1 ]; then usage >&2; exit 2; fi; update_self; exit $? ;;
   -h|--help) usage; exit 0 ;;
   --check) check_tools; exit $? ;;
   --fix-genres) shift; python_helper genre_tagger.py "$@"; exit $? ;;
