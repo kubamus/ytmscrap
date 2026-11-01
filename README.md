@@ -179,6 +179,22 @@ ytmscrap --fix-rekordbox . --dry-run               # podgląd
 - MP3/Opus nie odzyskają jakości przy konwersji do FLAC. Zmiana grafiki w FLAC nie koduje dźwięku ponownie.
 - W rekordbox użyj Collection → Reload Tag, by odświeżyć miniatury.
 
+## Awaryjne darmowe proxy (opcjonalne)
+
+Gdy YouTube odrzuca połączenie z Twojego IP (komunikat o bocie lub HTTP 429), możesz uruchomić:
+
+```bash
+ytmscrap --auto-proxy "https://www.youtube.com/watch?v=BaW_jenozKc"
+ytmscrap --auto-proxy --rekordbox "https://music.youtube.com/playlist?list=TWOJA_PLAYLISTA"
+```
+
+- Bez tej flagi narzędzie **nie korzysta z proxy**. Z flagą najpierw pobiera normalnie; proxy uruchamia tylko przy błędzie związanym z blokadą YouTube.
+- Pobiera aktualne listy darmowych proxy HTTP z `monosans/proxy-list` i `maximilianfeix/free-proxy-list` na GitHubie. **Nie zapisuje stałej listy IP.**
+- Sprawdza do 48 adresów przez HTTPS, testując 12 równolegle; następnie do 16 serwerów przez `yt-dlp`, testując 6 równolegle. Może spróbować maksymalnie 3 działających proxy podczas pobierania.
+- Pobierane wcześniej pliki pozostają na dysku, a historia `downloaded.txt` pozwala pominąć gotowe utwory po ponowieniu playlisty.
+- Ten tryb nie przekazuje konfiguracji `yt-dlp` (np. cookies z konta) do publicznego proxy. Publiczne serwery bywają wolne lub niedostępne — **nie ma gwarancji**, że obejdą blokadę.
+- Dostawca publicznego proxy może zobaczyć IP użytkownika i host docelowy. Nie korzystaj z publicznych proxy do logowania lub przesyłania danych prywatnych.
+
 ## Diagnostyka połączenia z API gatunków
 
 Gdy skrypt zgłasza błędy API (np. `URLError` na macOS), zaktualizuj instalację:
