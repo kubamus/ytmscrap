@@ -17,6 +17,7 @@ Użycie:
   ytmscrap --update       Pobierz najnowszą wersję programu z GitHuba
   ytmscrap update         To samo (krótsza forma)
   ytmscrap --check        Sprawdź wymagane narzędzia
+  ytmscrap --version      Pokaż zainstalowaną wersję
   ytmscrap --help         Pokaż pomoc
 
 Spotify -> YouTube Music: https://www.tunemymusic.com/
@@ -68,12 +69,88 @@ python_helper() {
   "$py" "$helper" "$@"
 }
 
+
+# Read the version written after installation; allow use from a source checkout.
+version_source="$HOME/.local/share/ytmscrap/VERSION"
+if [ ! -f "$version_source" ]; then
+  version_source="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/VERSION"
+fi
+installed_version=0.0.0
+if [ -f "$version_source" ]; then
+  IFS= read -r installed_version < "$version_source" || :
+fi
+
+valid_version() {
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+version_is_newer() {
+  valid_version "$1" && valid_version "$2" || return 1
+  local -a remote_parts local_parts
+  local i
+  IFS=. read -r -a remote_parts <<< "$1"
+  IFS=. read -r -a local_parts <<< "$2"
+  for i in 0 1 2; do
+    if (( 10#${remote_parts[$i]} > 10#${local_parts[$i]} )); then return 0; fi
+    if (( 10#${remote_parts[$i]} < 10#${local_parts[$i]} )); then return 1; fi
+  done
+  return 1
+}
+
+fetch_latest_version() {
+  local version
+  version=$(curl --fail --location --silent --show-error \
+    --connect-timeout 2 --max-time 4 -H 'Cache-Control: no-cache' \
+    "https://raw.githubusercontent.com/kubamus/ytmscrap/main/VERSION?refresh=$(date +%s)") || return 1
+  version=${version//$'\r'/}
+  valid_version "$version" || return 1
+  printf '%s\n' "$version"
+}
+
+# Check at most once per day. Failed network checks never block CLI usage.
+check_update_notice() {
+  [ "${YTMSCRAP_NO_UPDATE_CHECK:-0}" = 1 ] && return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  local now cache_dir cache_file checked_at='' latest=''
+  now=$(date +%s)
+  cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/ytmscrap"
+  cache_file="$cache_dir/update-check"
+  if [ -r "$cache_file" ]; then
+    read -r checked_at latest < "$cache_file" || :
+  fi
+  if ! [[ "$checked_at" =~ ^[0-9]+$ ]] ||
+     (( now < checked_at || now - checked_at >= 86400 )); then
+    if latest=$(fetch_latest_version 2>/dev/null); then
+      mkdir -p -- "$cache_dir" 2>/dev/null &&
+        printf '%s %s\n' "$now" "$latest" > "$cache_file" || :
+    else
+      latest=''
+      mkdir -p -- "$cache_dir" 2>/dev/null &&
+        printf '%s unavailable\n' "$now" > "$cache_file" || :
+    fi
+  fi
+  if version_is_newer "$latest" "$installed_version"; then
+    printf '[ytmscrap] Dostępna aktualizacja: v%s (masz v%s). Uruchom: ytmscrap update\n' \
+      "$latest" "$installed_version" >&2
+  fi
+  return 0
+}
+
 update_self() {
   if ! command -v curl >/dev/null 2>&1; then
     printf '[BŁĄD] Brak curl. Zainstaluj curl albo uruchom instalator ręcznie.\n' >&2
     return 1
   fi
-  local tmp_installer
+  local latest tmp_installer
+  if ! latest=$(fetch_latest_version); then
+    printf '[BŁĄD] Nie udało się sprawdzić najnowszej wersji. Spróbuj ponownie później.\n' >&2
+    return 1
+  fi
+  if ! version_is_newer "$latest" "$installed_version"; then
+    printf '[ytmscrap] Masz najnowszą wersję (v%s). Aktualizacja nie jest potrzebna.\n' "$installed_version"
+    return 0
+  fi
+  printf '[ytmscrap] Nowa wersja: v%s -> v%s\n' "$installed_version" "$latest"
   tmp_installer=$(mktemp) || {
     printf '[BŁĄD] Nie można utworzyć pliku tymczasowego.\n' >&2
     return 1
@@ -105,6 +182,10 @@ update_self() {
 
 case "${1:-}" in
   --update|update) if [ "$#" -ne 1 ]; then usage >&2; exit 2; fi; update_self; exit $? ;;
+  --version) printf 'ytmscrap v%s\n' "$installed_version"; exit 0 ;;
+esac
+check_update_notice
+case "${1:-}" in
   -h|--help) usage; exit 0 ;;
   --check) check_tools; exit $? ;;
   --fix-genres) shift; python_helper genre_tagger.py "$@"; exit $? ;;

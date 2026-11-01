@@ -55,7 +55,9 @@ Po jednorazowym zainstalowaniu programu wystarczy wpisać w **Git Bash (Windows)
 ytmscrap update
 ```
 
-Możesz też użyć `ytmscrap --update`. Komenda pobiera aktualny instalator z publicznego repo `kubamus/ytmscrap`, aktualizuje **CLI, moduł gatunków, moduł Rekordbox i moduł proxy** oraz sprawdza brakujące zależności. Nie kasuje pobranych plików, folderów ani historii `downloaded.txt`. Zainstalowane programy, które już działają (yt-dlp, FFmpeg, Deno), pozostają bez zmian; instalator nie wymusza ich aktualizacji.
+Możesz też użyć `ytmscrap --update`. Komenda **najpierw sprawdza plik `VERSION` w GitHubie** i uruchamia instalator tylko wtedy, gdy dostępna jest nowsza wersja. W takim przypadku pobiera aktualny instalator z publicznego repo `kubamus/ytmscrap`, aktualizuje **CLI, moduł gatunków, moduł Rekordbox i moduł proxy** oraz sprawdza brakujące zależności. Nie kasuje pobranych plików, folderów ani historii `downloaded.txt`. Zainstalowane programy, które już działają (yt-dlp, FFmpeg, Deno), pozostają bez zmian; instalator nie wymusza ich aktualizacji.
+
+Podczas zwykłego używania CLI sprawdza aktualizacje maksymalnie raz na 24 godziny. Gdy dostępna jest nowa wersja, pokazuje polecenie `ytmscrap update`. Brak internetu nie blokuje programu. `ytmscrap --version` pokazuje zainstalowaną wersję. Automatyczne sprawdzanie możesz wyłączyć przez `YTMSCRAP_NO_UPDATE_CHECK=1`. Każde nowe wydanie musi zwiększyć numer w pliku `VERSION` (`major.minor.patch`).
 
 **Pierwsze uruchomienie:** starsza wersja `ytmscrap` nie zna jeszcze komendy `update`. Wykonaj poniższe polecenie tylko raz, aby ją dodać:
 
@@ -235,7 +237,8 @@ Uwaga: przy instalacji starszej wersji ponownie uruchom instalator, żeby pobra�
 ## Przydatne komendy
 
 ```bash
-ytmscrap update             # aktualizuj CLI i moduły z GitHuba
+ytmscrap update             # aktualizuj CLI i moduły, jeśli jest nowa wersja
+ytmscrap --version         # pokaż zainstalowaną wersję
 ytmscrap --check-genres    # test połączenia z MusicBrainz i Deezer
 ytmscrap --fix-genres .    # napraw gatunki w istniejących plikach
 ytmscrap --help        # pomoc

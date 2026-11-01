@@ -25,6 +25,7 @@ exit 0
 FAKE
 chmod +x "$tmp/bin/yt-dlp" "$tmp/bin/ffmpeg" "$tmp/bin/deno"
 export PATH="$tmp/bin:$PATH"
+export YTMSCRAP_NO_UPDATE_CHECK=1  # Keep download smoke tests offline.
 export YTMSCRAP_ARG_LOG="$tmp/args.txt"
 
 output=$(printf '%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://music.youtube.com/playlist?list=PLQLDyACIOtUw&si=test' '2' '' | bash "$root/ytmscrap" 2>&1)

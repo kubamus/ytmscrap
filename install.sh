@@ -11,6 +11,7 @@ tmp_script=''
 tmp_helper=''
 tmp_rekordbox=''
 tmp_proxy=''
+tmp_version=''
 if [ -n "$remote_repo" ]; then
   if [[ ! "$remote_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
     err 'Repozytorium powinno mieć postać OWNER/REPO.'
@@ -21,7 +22,8 @@ if [ -n "$remote_repo" ]; then
   tmp_helper=$(mktemp)
   tmp_rekordbox=$(mktemp)
   tmp_proxy=$(mktemp)
-  trap 'rm -f "$tmp_script" "$tmp_helper" "$tmp_rekordbox" "$tmp_proxy"' EXIT
+  tmp_version=$(mktemp)
+  trap 'rm -f "$tmp_script" "$tmp_helper" "$tmp_rekordbox" "$tmp_proxy" "$tmp_version"' EXIT
   info "Pobieranie CLI z publicznego repozytorium $remote_repo"
   # Distinct URLs avoid stale copies from the GitHub Raw CDN after new commits.
   cache_key="$(date +%s)-$"
@@ -35,16 +37,25 @@ if [ -n "$remote_repo" ]; then
   rekordbox_source=$tmp_rekordbox
   curl -fL --retry 2 -H 'Cache-Control: no-cache' --output "$tmp_proxy" "$remote_base/proxy_fallback.py?refresh=$cache_key"
   proxy_source=$tmp_proxy
+  curl -fL --retry 2 -H 'Cache-Control: no-cache' --output "$tmp_version" "$remote_base/VERSION?refresh=$cache_key"
+  version_source=$tmp_version
 else
   base_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
   script_source="$base_dir/ytmscrap"
   helper_source="$base_dir/genre_tagger.py"
   rekordbox_source="$base_dir/rekordbox.py"
   proxy_source="$base_dir/proxy_fallback.py"
-  if [ ! -f "$script_source" ] || [ ! -f "$helper_source" ] || [ ! -f "$rekordbox_source" ] || [ ! -f "$proxy_source" ]; then
+  version_source="$base_dir/VERSION"
+  if [ ! -f "$script_source" ] || [ ! -f "$helper_source" ] || [ ! -f "$rekordbox_source" ] || [ ! -f "$proxy_source" ] || [ ! -f "$version_source" ]; then
     err 'Brak plików ytmscrap lub modułów Python obok install.sh. Pobierz całe repozytorium lub użyj trybu OWNER/REPO.'
     exit 1
   fi
+fi
+
+# Never store a malformed version as installed.
+if ! grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' "$version_source"; then
+  err 'Niepoprawny plik VERSION.'
+  exit 1
 fi
 
 case "$(uname -s)" in
@@ -225,6 +236,8 @@ for tool in yt-dlp ffmpeg deno; do
   fi
 done
 
+# Mark the new version installed only after the CLI and helpers are set up.
+cp -- "$version_source" "$share_dir/VERSION"
 printf '\nZainstalowano ytmscrap: %s/ytmscrap\n' "$bin_dir"
 if [ "$missing_any" -ne 0 ]; then
   printf 'Otwórz nowy terminal i uruchom: ytmscrap --check\n'
