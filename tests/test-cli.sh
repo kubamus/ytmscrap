@@ -173,16 +173,16 @@ if bash "$root/ytmscrap" --update extra > /dev/null 2>&1; then
   echo 'FAIL: accepted invalid update arguments' >&2; exit 1
 fi
 
-# An auto-proxy download must stay direct if yt-dlp succeeds.
+# Automatic fallback must stay direct when yt-dlp succeeds.
 rm -f "$tmp/args.txt"
 printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://www.youtube.com/watch?v=Sug433bP-mw' 2 '' n n |
-  bash "$root/ytmscrap" --auto-proxy > "$tmp/direct-proxy.log" 2>&1
+  bash "$root/ytmscrap" > "$tmp/direct-proxy.log" 2>&1
 if grep -Fq -- '--proxy' "$tmp/args.txt"; then
-  echo 'FAIL: auto-proxy enabled proxy without a download error' >&2; exit 1
+  echo 'FAIL: proxy used without a download error' >&2; exit 1
 fi
 
 # Simulate --ignore-errors returning success while a video hits the bot wall.
-# Python is mocked only for proxy discovery: no public proxies or network in CI.
+# No public proxies/network needed: fake Python returns a known sample address.
 mkdir -p "$tmp/proxy-mock"
 cat > "$tmp/proxy-mock/python3" <<'FAKE_PYTHON'
 #!/usr/bin/env bash
@@ -201,16 +201,42 @@ for arg in "$@"; do
     exit 0
   fi
 done
-echo 'ERROR: [youtube] Sug433bP-mw: Sign in to confirm you’re not a bot.' >&2
-# --ignore-errors can return 0 in this situation.
+case "${YTMSCRAP_MOCK_ERROR:-bot}" in
+  bot) echo 'ERROR: [youtube] Sug433bP-mw: Sign in to confirm you’re not a bot.' >&2 ;;
+  rate) echo 'ERROR: [youtube] Sug433bP-mw: HTTP Error 429: Too Many Requests' >&2 ;;
+  *) echo 'ERROR: Unknown error' >&2 ;;
+esac
+# --ignore-errors may return success in this situation.
 exit 0
 FAKE_BOT
 chmod +x "$tmp/proxy-mock/python3" "$tmp/proxy-mock/yt-dlp"
+
+# Standard invocation automatically invokes fallback after bot detection.
 rm -f "$tmp/args.txt"
 printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://www.youtube.com/watch?v=Sug433bP-mw' 2 '' n n |
-  PATH="$tmp/proxy-mock:$PATH" bash "$root/ytmscrap" --auto-proxy > "$tmp/bot-proxy.log" 2>&1
+  PATH="$tmp/proxy-mock:$PATH" bash "$root/ytmscrap" > "$tmp/bot-proxy.log" 2>&1
 grep -Fqx -- '--proxy' "$tmp/args.txt"
 grep -Fqx -- 'http://8.8.8.8:8080' "$tmp/args.txt"
 grep -Fq '[Proxy] Próba pobierania' "$tmp/bot-proxy.log"
+
+# Same automatic handling for HTTP 429 from an individual song in a playlist.
+rm -f "$tmp/args.txt"
+printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://music.youtube.com/playlist?list=PLQLDyACIOtUw' 2 '' n n |
+  YTMSCRAP_MOCK_ERROR=rate PATH="$tmp/proxy-mock:$PATH" bash "$root/ytmscrap" > "$tmp/rate-proxy.log" 2>&1
+grep -Fqx -- '--proxy' "$tmp/args.txt"
+grep -Fq '[Proxy] Próba pobierania' "$tmp/rate-proxy.log"
+
+# Opt out must not search for proxies, and a bot-blocked download must fail.
+rm -f "$tmp/args.txt"
+if printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://www.youtube.com/watch?v=Sug433bP-mw' 2 '' n n |
+  PATH="$tmp/proxy-mock:$PATH" bash "$root/ytmscrap" --no-auto-proxy > "$tmp/no-proxy.log" 2>&1; then
+  echo 'FAIL: bot-blocked download marked successful with --no-auto-proxy' >&2; exit 1
+fi
+if grep -Fqx -- '--proxy' "$tmp/args.txt"; then
+  echo 'FAIL: --no-auto-proxy used a proxy' >&2; exit 1
+fi
+if grep -Fq '[Proxy] Próba pobierania' "$tmp/no-proxy.log"; then
+  echo 'FAIL: --no-auto-proxy triggered fallback' >&2; exit 1
+fi
 
 printf 'PASS: native Windows output paths, single songs, WAV, FLAC, Rekordbox and validation\n'
