@@ -10,6 +10,7 @@ Użycie:
   ytmscrap                Pytania o folder, link do utworu/playlisty i format
   ytmscrap "URL"          Link do utworu albo playlisty; pytanie o folder
   ytmscrap --rekordbox "URL"  Pobierz z przygotowaniem okładek do rekordbox
+  ytmscrap --auto-proxy "URL"  Po błędzie YouTube spróbuj darmowych proxy
   ytmscrap --fix-rekordbox [FOLDER] [--dry-run]  FLAC + kwadratowe okładki
   ytmscrap --fix-genres [FOLDER] [--dry-run]  Uzupełnij Genre w plikach FLAC/WAV
   ytmscrap --check-genres  Sprawdź połączenie z bazami gatunków
@@ -111,10 +112,14 @@ case "${1:-}" in
   --fix-rekordbox) shift; python_helper rekordbox.py "$@"; exit $? ;;
 esac
 download_rekordbox=ask
-if [ "${1:-}" = --rekordbox ]; then
-  download_rekordbox=yes
-  shift
-fi
+auto_proxy=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --rekordbox) download_rekordbox=yes; shift ;;
+    --auto-proxy) auto_proxy=1; shift ;;
+    *) break ;;
+  esac
+done
 if [ "$#" -gt 1 ]; then
   usage >&2
   exit 2
@@ -239,7 +244,11 @@ printf 'Folder: %s\n' "$download_dir"
 printf 'Format: %s (bez dodatkowej stratnej kompresji)\n' "$format_label"
 printf 'Metadane: tagi; %s\n' "$cover_note"
 printf 'Nazwy: Wykonawca - Tytuł.%s (bez numeru playlisty)\n' "$audio_format"
-printf 'Historia: %s\n\n' "$archive_file"
+printf 'Historia: %s\n' "$archive_file"
+if [ "$auto_proxy" -eq 1 ]; then
+  printf 'Proxy: awaryjne po błędzie YouTube.\n'
+fi
+printf '\n'
 
 if ! IFS= read -r -p 'Rozpocząć pobieranie? [T/n]: ' confirmation; then
   printf '\nAnulowano.\n'
@@ -294,9 +303,11 @@ yt_args+=(
 )
 
 manifest=''
+download_log=$(mktemp)
+proxy_file=$(mktemp)
+trap 'rm -f -- "$manifest" "$download_log" "$proxy_file"' EXIT
 if [ "$rekordbox_mode" -eq 1 ]; then
   manifest=$(mktemp)
-  trap 'rm -f -- "$manifest"' EXIT
   native_manifest="$manifest"
   if [ "$is_windows" -eq 1 ]; then
     native_manifest=$(cygpath -m "$manifest")
