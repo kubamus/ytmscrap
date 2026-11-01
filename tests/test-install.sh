@@ -42,6 +42,7 @@ HOME="$tmp/home" bash "$root/install.sh" > "$tmp/mac.log"
 [ -f "$tmp/home/.local/share/ytmscrap/genre_tagger.py" ]
 [ -f "$tmp/home/.local/share/ytmscrap/rekordbox.py" ]
 [ -f "$tmp/home/.local/share/ytmscrap/proxy_fallback.py" ]
+cmp -s "$tmp/home/.local/share/ytmscrap/VERSION" "$root/VERSION"
 grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.zprofile"
 grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.zshrc"
 
@@ -63,27 +64,28 @@ grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.bash_profile"
 cat > "$tmp/bin/curl" <<'FAKE'
 #!/usr/bin/env bash
 if [ "${YTMSCRAP_MOCK_CURL_FAIL:-0}" = 1 ]; then exit 22; fi
+dest=''
+url=''
 while [ "$#" -gt 0 ]; do
   if [ "$1" = --output ]; then
     shift
     dest="$1"
-    shift
-    url=""
-    for arg in "$@"; do url="$arg"; done
-    printf '%s\n' "$url" >> "$YTMSCRAP_CURL_LOG"
-    case "$url" in
-      */install.sh*) cp "$YTMSCRAP_REMOTE_INSTALLER" "$dest" ;;
-      */genre_tagger.py*) cp "$YTMSCRAP_REMOTE_HELPER" "$dest" ;;
-      */rekordbox.py*) cp "$YTMSCRAP_REMOTE_REKORDBOX" "$dest" ;;
-      */proxy_fallback.py*) cp "$YTMSCRAP_REMOTE_PROXY" "$dest" ;;
-      */ytmscrap*) cp "$YTMSCRAP_REMOTE_FIXTURE" "$dest" ;;
-      *) exit 1 ;;
-    esac
-    exit 0
+  elif [[ "$1" == https://* ]]; then
+    url="$1"
   fi
   shift
 done
-exit 1
+printf '%s\n' "$url" >> "$YTMSCRAP_CURL_LOG"
+case "$url" in
+  */VERSION*) src="$YTMSCRAP_REMOTE_VERSION" ;;
+  */install.sh*) src="$YTMSCRAP_REMOTE_INSTALLER" ;;
+  */genre_tagger.py*) src="$YTMSCRAP_REMOTE_HELPER" ;;
+  */rekordbox.py*) src="$YTMSCRAP_REMOTE_REKORDBOX" ;;
+  */proxy_fallback.py*) src="$YTMSCRAP_REMOTE_PROXY" ;;
+  */ytmscrap*) src="$YTMSCRAP_REMOTE_FIXTURE" ;;
+  *) exit 1 ;;
+esac
+if [ -n "$dest" ]; then cp "$src" "$dest"; else cat "$src"; fi
 FAKE
 chmod +x "$tmp/bin/curl"
 export YTMSCRAP_CURL_LOG="$tmp/curl-urls.log"
@@ -92,6 +94,7 @@ export YTMSCRAP_REMOTE_FIXTURE="$root/ytmscrap"
 export YTMSCRAP_REMOTE_HELPER="$root/genre_tagger.py"
 export YTMSCRAP_REMOTE_REKORDBOX="$root/rekordbox.py"
 export YTMSCRAP_REMOTE_PROXY="$root/proxy_fallback.py"
+export YTMSCRAP_REMOTE_VERSION="$root/VERSION"
 rm -f "$tmp/home/.local/bin/ytmscrap"
 HOME="$tmp/home" bash "$root/install.sh" demo-user/ytmscrap > "$tmp/remote.log"
 [ -x "$tmp/home/.local/bin/ytmscrap" ]
@@ -99,17 +102,20 @@ grep -Fq 'publicznego repozytorium demo-user/ytmscrap' "$tmp/remote.log"
 head -n 1 "$tmp/home/.local/share/ytmscrap/genre_tagger.py" | grep -Fq '#!/usr/bin/env python3'
 head -n 1 "$tmp/home/.local/share/ytmscrap/rekordbox.py" | grep -Fq '#!/usr/bin/env python3'
 head -n 1 "$tmp/home/.local/share/ytmscrap/proxy_fallback.py" | grep -Fq '#!/usr/bin/env python3'
+cmp -s "$tmp/home/.local/share/ytmscrap/VERSION" "$root/VERSION"
 # The installer must request a fresh URL for every downloaded source.
 grep -E 'ytmscrap\?refresh=[0-9]+' "$tmp/curl-urls.log"
 grep -E 'genre_tagger.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
 grep -E 'rekordbox.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
 grep -E 'proxy_fallback.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
+grep -E 'VERSION\?refresh=[0-9]+' "$tmp/curl-urls.log"
 
 # Self-update should invoke the official installer without touching the system,
 # replace CLI as well as both Python helper files, and work on both shells.
 for mock_os in Darwin MINGW64_NT-10.0; do
   export YTMSCRAP_MOCK_UNAME="$mock_os"
   printf '#!/usr/bin/env bash\nprintf "old CLI\\n"\n' > "$tmp/home/.local/bin/ytmscrap"
+  printf '0.0.1\n' > "$tmp/home/.local/share/ytmscrap/VERSION"
   printf 'old helper\n' > "$tmp/home/.local/share/ytmscrap/genre_tagger.py"
   printf 'old rekordbox\n' > "$tmp/home/.local/share/ytmscrap/rekordbox.py"
   printf 'old proxy helper\n' > "$tmp/home/.local/share/ytmscrap/proxy_fallback.py"
@@ -119,13 +125,19 @@ for mock_os in Darwin MINGW64_NT-10.0; do
   cmp -s "$tmp/home/.local/share/ytmscrap/rekordbox.py" "$root/rekordbox.py"
   cmp -s "$tmp/home/.local/share/ytmscrap/proxy_fallback.py" "$root/proxy_fallback.py"
   grep -Fq 'Aktualizacja zakończona' "$tmp/update.log"
+  cmp -s "$tmp/home/.local/share/ytmscrap/VERSION" "$root/VERSION"
 done
 
-# The alias must work too and a failed download must not overwrite the CLI.
+# A current install must not download or run the installer again.
 export YTMSCRAP_MOCK_UNAME=Darwin
+before=$(grep -c '/install.sh?refresh=' "$tmp/curl-urls.log")
 HOME="$tmp/home" bash "$root/ytmscrap" update > "$tmp/update-alias.log"
-grep -Fq 'Aktualizacja zakończona' "$tmp/update-alias.log"
-grep -E 'install.sh\?refresh=[0-9]+' "$tmp/curl-urls.log"
+grep -Fq 'Aktualizacja nie jest potrzebna' "$tmp/update-alias.log"
+HOME="$tmp/home" bash "$root/ytmscrap" --update > "$tmp/update-noop.log"
+grep -Fq 'Aktualizacja nie jest potrzebna' "$tmp/update-noop.log"
+after=$(grep -c '/install.sh?refresh=' "$tmp/curl-urls.log")
+[ "$before" -eq "$after" ] || { echo 'FAIL: update fetched the installer unnecessarily' >&2; exit 1; }
+
 export YTMSCRAP_MOCK_CURL_FAIL=1
 if HOME="$tmp/home" bash "$root/ytmscrap" --update > "$tmp/update-failed.log" 2>&1; then
   echo 'FAIL: --update returned success despite download error' >&2
@@ -134,5 +146,23 @@ fi
 unset YTMSCRAP_MOCK_CURL_FAIL
 cmp -s "$tmp/home/.local/bin/ytmscrap" "$root/ytmscrap"
 
-echo 'PASS: Windows/macOS installer, self-update, remote helpers, PATH and failure handling'
+# The CLI displays a notice when outdated and caches checks for 24 hours.
+printf '0.0.1\n' > "$tmp/home/.local/share/ytmscrap/VERSION"
+rm -rf "$tmp/home/.cache/ytmscrap"
+before=$(grep -c '/VERSION?refresh=' "$tmp/curl-urls.log")
+notice=$(HOME="$tmp/home" bash "$root/ytmscrap" --help 2>&1)
+[[ "$notice" == *'Dostępna aktualizacja'* ]] || { echo 'FAIL: no update notice' >&2; exit 1; }
+notice=$(HOME="$tmp/home" bash "$root/ytmscrap" --help 2>&1)
+[[ "$notice" == *'Dostępna aktualizacja'* ]]
+after=$(grep -c '/VERSION?refresh=' "$tmp/curl-urls.log")
+[ "$after" -eq $((before + 1)) ] || { echo 'FAIL: update check did not use cache' >&2; exit 1; }
 
+# GitHub failures should not prevent normal commands.
+rm -rf "$tmp/home/.cache/ytmscrap"
+export YTMSCRAP_MOCK_CURL_FAIL=1
+HOME="$tmp/home" bash "$root/ytmscrap" --help > "$tmp/offline-help.log" 2>&1
+grep -Fq 'ytmscrap --update' "$tmp/offline-help.log"
+unset YTMSCRAP_MOCK_CURL_FAIL
+[ "$(HOME="$tmp/home" bash "$root/ytmscrap" --version)" = 'ytmscrap v0.0.1' ]
+
+echo 'PASS: Windows/macOS installer, version checks, update notices and offline handling'
