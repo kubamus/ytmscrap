@@ -329,14 +329,14 @@ if grep -Eiq "$bot_error" "$download_log"; then
     printf '\n[Proxy] YouTube odrzucił połączenie. Szukam działających proxy...\n'
     test_id=''
     while IFS= read -r line; do
-      if [[ "$line" =~ \\[youtube\\][[:space:]]+([A-Za-z0-9_-]{11}) ]]; then
+      if [[ "$line" =~ \[youtube\][[:space:]]+([A-Za-z0-9_-]{11}) ]]; then
         test_id="${BASH_REMATCH[1]}"
         break
       fi
     done < "$download_log"
     if [ -z "$test_id" ] && [ "$media_type" = song ]; then
       if [[ "$media_url" =~ v=([A-Za-z0-9_-]{11}) ]] ||
-         [[ "$media_url" =~ youtu\\.be/([A-Za-z0-9_-]{11}) ]]; then
+         [[ "$media_url" =~ youtu\.be/([A-Za-z0-9_-]{11}) ]]; then
         test_id="${BASH_REMATCH[1]}"
       elif [[ "$media_url" =~ /(shorts|live)/([A-Za-z0-9_-]{11}) ]]; then
         test_id="${BASH_REMATCH[2]}"
