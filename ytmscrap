@@ -10,7 +10,7 @@ Użycie:
   ytmscrap                Pytania o folder, link do utworu/playlisty i format
   ytmscrap "URL"          Link do utworu albo playlisty; pytanie o folder
   ytmscrap --rekordbox "URL"  Pobierz z przygotowaniem okładek do rekordbox
-  ytmscrap --auto-proxy "URL"  Po błędzie YouTube spróbuj darmowych proxy
+  ytmscrap --no-auto-proxy "URL"  Wyłącz automatyczne proxy po błędzie YouTube
   ytmscrap --fix-rekordbox [FOLDER] [--dry-run]  FLAC + kwadratowe okładki
   ytmscrap --fix-genres [FOLDER] [--dry-run]  Uzupełnij Genre w plikach FLAC/WAV
   ytmscrap --check-genres  Sprawdź połączenie z bazami gatunków
@@ -112,11 +112,13 @@ case "${1:-}" in
   --fix-rekordbox) shift; python_helper rekordbox.py "$@"; exit $? ;;
 esac
 download_rekordbox=ask
-auto_proxy=0
+# Direct downloads are always attempted first; fallback is enabled by default.
+auto_proxy=1
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --rekordbox) download_rekordbox=yes; shift ;;
-    --auto-proxy) auto_proxy=1; shift ;;
+    --auto-proxy) auto_proxy=1; shift ;; # Kept for existing scripts.
+    --no-auto-proxy) auto_proxy=0; shift ;;
     *) break ;;
   esac
 done
@@ -322,7 +324,7 @@ direct_ok=0
 if yt-dlp "${yt_args[@]}" 2>&1 | tee "$download_log"; then
   direct_ok=1
 fi
-bot_error='sign in to confirm.*not a bot|http error 429|too many requests'
+bot_error='sign in to confirm.*not a bot|http error 429|too many requests|rate[- ]limit(ed)?'
 if grep -Eiq "$bot_error" "$download_log"; then
   direct_ok=0
   if [ "$auto_proxy" -eq 1 ]; then
