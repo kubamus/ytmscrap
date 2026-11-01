@@ -322,7 +322,7 @@ direct_ok=0
 if yt-dlp "${yt_args[@]}" 2>&1 | tee "$download_log"; then
   direct_ok=1
 fi
-bot_error='sign in to confirm you.?re not a bot|http error 429|too many requests'
+bot_error='sign in to confirm.*not a bot|http error 429|too many requests'
 if grep -Eiq "$bot_error" "$download_log"; then
   direct_ok=0
   if [ "$auto_proxy" -eq 1 ]; then
