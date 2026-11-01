@@ -41,6 +41,7 @@ HOME="$tmp/home" bash "$root/install.sh" > "$tmp/mac.log"
 [ -x "$tmp/home/.local/bin/ytmscrap" ]
 [ -f "$tmp/home/.local/share/ytmscrap/genre_tagger.py" ]
 [ -f "$tmp/home/.local/share/ytmscrap/rekordbox.py" ]
+[ -f "$tmp/home/.local/share/ytmscrap/proxy_fallback.py" ]
 grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.zprofile"
 grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.zshrc"
 
@@ -74,6 +75,7 @@ while [ "$#" -gt 0 ]; do
       */install.sh*) cp "$YTMSCRAP_REMOTE_INSTALLER" "$dest" ;;
       */genre_tagger.py*) cp "$YTMSCRAP_REMOTE_HELPER" "$dest" ;;
       */rekordbox.py*) cp "$YTMSCRAP_REMOTE_REKORDBOX" "$dest" ;;
+      */proxy_fallback.py*) cp "$YTMSCRAP_REMOTE_PROXY" "$dest" ;;
       */ytmscrap*) cp "$YTMSCRAP_REMOTE_FIXTURE" "$dest" ;;
       *) exit 1 ;;
     esac
@@ -89,16 +91,19 @@ export YTMSCRAP_REMOTE_INSTALLER="$root/install.sh"
 export YTMSCRAP_REMOTE_FIXTURE="$root/ytmscrap"
 export YTMSCRAP_REMOTE_HELPER="$root/genre_tagger.py"
 export YTMSCRAP_REMOTE_REKORDBOX="$root/rekordbox.py"
+export YTMSCRAP_REMOTE_PROXY="$root/proxy_fallback.py"
 rm -f "$tmp/home/.local/bin/ytmscrap"
 HOME="$tmp/home" bash "$root/install.sh" demo-user/ytmscrap > "$tmp/remote.log"
 [ -x "$tmp/home/.local/bin/ytmscrap" ]
 grep -Fq 'publicznego repozytorium demo-user/ytmscrap' "$tmp/remote.log"
 head -n 1 "$tmp/home/.local/share/ytmscrap/genre_tagger.py" | grep -Fq '#!/usr/bin/env python3'
 head -n 1 "$tmp/home/.local/share/ytmscrap/rekordbox.py" | grep -Fq '#!/usr/bin/env python3'
+head -n 1 "$tmp/home/.local/share/ytmscrap/proxy_fallback.py" | grep -Fq '#!/usr/bin/env python3'
 # The installer must request a fresh URL for every downloaded source.
 grep -E 'ytmscrap\?refresh=[0-9]+' "$tmp/curl-urls.log"
 grep -E 'genre_tagger.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
 grep -E 'rekordbox.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
+grep -E 'proxy_fallback.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
 
 # Self-update should invoke the official installer without touching the system,
 # replace CLI as well as both Python helper files, and work on both shells.
@@ -107,10 +112,12 @@ for mock_os in Darwin MINGW64_NT-10.0; do
   printf '#!/usr/bin/env bash\nprintf "old CLI\\n"\n' > "$tmp/home/.local/bin/ytmscrap"
   printf 'old helper\n' > "$tmp/home/.local/share/ytmscrap/genre_tagger.py"
   printf 'old rekordbox\n' > "$tmp/home/.local/share/ytmscrap/rekordbox.py"
+  printf 'old proxy helper\n' > "$tmp/home/.local/share/ytmscrap/proxy_fallback.py"
   HOME="$tmp/home" bash "$root/ytmscrap" --update > "$tmp/update.log"
   cmp -s "$tmp/home/.local/bin/ytmscrap" "$root/ytmscrap"
   cmp -s "$tmp/home/.local/share/ytmscrap/genre_tagger.py" "$root/genre_tagger.py"
   cmp -s "$tmp/home/.local/share/ytmscrap/rekordbox.py" "$root/rekordbox.py"
+  cmp -s "$tmp/home/.local/share/ytmscrap/proxy_fallback.py" "$root/proxy_fallback.py"
   grep -Fq 'Aktualizacja zakończona' "$tmp/update.log"
 done
 
