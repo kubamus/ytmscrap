@@ -10,6 +10,7 @@ remote_repo=${1:-}
 tmp_script=''
 tmp_helper=''
 tmp_rekordbox=''
+tmp_proxy=''
 if [ -n "$remote_repo" ]; then
   if [[ ! "$remote_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
     err 'Repozytorium powinno mieć postać OWNER/REPO.'
@@ -19,7 +20,8 @@ if [ -n "$remote_repo" ]; then
   tmp_script=$(mktemp)
   tmp_helper=$(mktemp)
   tmp_rekordbox=$(mktemp)
-  trap 'rm -f "$tmp_script" "$tmp_helper" "$tmp_rekordbox"' EXIT
+  tmp_proxy=$(mktemp)
+  trap 'rm -f "$tmp_script" "$tmp_helper" "$tmp_rekordbox" "$tmp_proxy"' EXIT
   info "Pobieranie CLI z publicznego repozytorium $remote_repo"
   # Distinct URLs avoid stale copies from the GitHub Raw CDN after new commits.
   cache_key="$(date +%s)-$"
@@ -31,13 +33,16 @@ if [ -n "$remote_repo" ]; then
   helper_source=$tmp_helper
   curl -fL --retry 2 -H 'Cache-Control: no-cache' --output "$tmp_rekordbox" "$remote_base/rekordbox.py?refresh=$cache_key"
   rekordbox_source=$tmp_rekordbox
+  curl -fL --retry 2 -H 'Cache-Control: no-cache' --output "$tmp_proxy" "$remote_base/proxy_fallback.py?refresh=$cache_key"
+  proxy_source=$tmp_proxy
 else
   base_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
   script_source="$base_dir/ytmscrap"
   helper_source="$base_dir/genre_tagger.py"
   rekordbox_source="$base_dir/rekordbox.py"
-  if [ ! -f "$script_source" ] || [ ! -f "$helper_source" ] || [ ! -f "$rekordbox_source" ]; then
-    err 'Brak ytmscrap, genre_tagger.py lub rekordbox.py obok install.sh. Pobierz całe repozytorium lub użyj trybu OWNER/REPO.'
+  proxy_source="$base_dir/proxy_fallback.py"
+  if [ ! -f "$script_source" ] || [ ! -f "$helper_source" ] || [ ! -f "$rekordbox_source" ] || [ ! -f "$proxy_source" ]; then
+    err 'Brak plików ytmscrap lub modułów Python obok install.sh. Pobierz całe repozytorium lub użyj trybu OWNER/REPO.'
     exit 1
   fi
 fi
@@ -195,6 +200,7 @@ share_dir="$HOME/.local/share/ytmscrap"
 mkdir -p -- "$share_dir"
 cp -- "$helper_source" "$share_dir/genre_tagger.py"
 cp -- "$rekordbox_source" "$share_dir/rekordbox.py"
+cp -- "$proxy_source" "$share_dir/proxy_fallback.py"
 if [ ! -x "$share_dir/venv/bin/python" ] && [ ! -x "$share_dir/venv/Scripts/python.exe" ]; then
   info 'Tworzenie środowiska Python'
   "$python_exec" -m venv "$share_dir/venv"
