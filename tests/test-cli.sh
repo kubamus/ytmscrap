@@ -175,7 +175,7 @@ fi
 
 # An auto-proxy download must stay direct if yt-dlp succeeds.
 rm -f "$tmp/args.txt"
-printf '%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n' "$tmp/My Music" 'https://www.youtube.com/watch?v=Sug433bP-mw' 2 '' n n |
+printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://www.youtube.com/watch?v=Sug433bP-mw' 2 '' n n |
   bash "$root/ytmscrap" --auto-proxy > "$tmp/direct-proxy.log" 2>&1
 if grep -Fq -- '--proxy' "$tmp/args.txt"; then
   echo 'FAIL: auto-proxy enabled proxy without a download error' >&2; exit 1
@@ -188,14 +188,14 @@ cat > "$tmp/proxy-mock/python3" <<'FAKE_PYTHON'
 #!/usr/bin/env bash
 if [[ "$1" == */proxy_fallback.py ]]; then
   [ "$2" = 'https://www.youtube.com/watch?v=Sug433bP-mw' ] || exit 3
-  printf '%s\\n' 'http://8.8.8.8:8080'
+  printf '%s\n' 'http://8.8.8.8:8080'
   exit 0
 fi
 exit 4
 FAKE_PYTHON
 cat > "$tmp/proxy-mock/yt-dlp" <<'FAKE_BOT'
 #!/usr/bin/env bash
-printf '%s\\n' "$@" > "$YTMSCRAP_ARG_LOG"
+printf '%s\n' "$@" > "$YTMSCRAP_ARG_LOG"
 for arg in "$@"; do
   if [ "$arg" = '--proxy' ]; then
     exit 0
@@ -207,7 +207,7 @@ exit 0
 FAKE_BOT
 chmod +x "$tmp/proxy-mock/python3" "$tmp/proxy-mock/yt-dlp"
 rm -f "$tmp/args.txt"
-printf '%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n' "$tmp/My Music" 'https://www.youtube.com/watch?v=Sug433bP-mw' 2 '' n n |
+printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$tmp/My Music" 'https://www.youtube.com/watch?v=Sug433bP-mw' 2 '' n n |
   PATH="$tmp/proxy-mock:$PATH" bash "$root/ytmscrap" --auto-proxy > "$tmp/bot-proxy.log" 2>&1
 grep -Fqx -- '--proxy' "$tmp/args.txt"
 grep -Fqx -- 'http://8.8.8.8:8080' "$tmp/args.txt"
