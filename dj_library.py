@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from array import array
 from collections import defaultdict
 import hashlib
@@ -15,6 +16,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 
 from mutagen.flac import FLAC
@@ -22,6 +24,10 @@ from mutagen.flac import FLAC
 from genre_tagger import normalize_genre
 
 EXTENSIONS = {".flac", ".wav"}
+EXPORT_EXTENSIONS = EXTENSIONS | {".mp3", ".m4a", ".mp4", ".aac", ".ogg", ".opus", ".aif", ".aiff"}
+EXPORT_COLUMNS = ("artist", "title", "album", "album_artist", "genre", "genre_group",
+                  "year", "bpm", "key", "energy", "energy_source", "isrc",
+                  "duration_seconds", "format", "relative_path")
 DB_PATH = Path(os.environ.get("YTMSCRAP_ENERGY_DB", str(Path.home() / ".cache/ytmscrap/energy.sqlite3")))
 
 # These groups reflect common open-format sets. Never guess a track is Polish
@@ -350,6 +356,129 @@ def cmd_organize(args) -> int:
     return 1 if issues else 0
 
 
+def tag_value(tags: dict, *keys: str) -> str:
+    for key in keys:
+        value = tags.get(key.lower())
+        if isinstance(value, (tuple, list)):
+            value = value[0] if value else ""
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def export_record(song: Path, folder: Path, store: EnergyStore) -> dict[str, str]:
+    """Read tags only. Never change a song, decode audio or query online services."""
+    if song.suffix.lower() == ".flac":
+        audio = FLAC(song)
+        tags = {key.lower(): value for key, value in audio.tags.items()} if audio.tags else {}
+        seconds = audio.info.length
+    else:
+        data = json.loads(subprocess.check_output(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration:format_tags",
+             "-of", "json", str(song)], text=True
+        )).get("format", {})
+        tags = {key.lower(): value for key, value in data.get("tags", {}).items()}
+        seconds = float(data.get("duration") or 0)
+
+    artist = tag_value(tags, "artist", "albumartist", "album_artist")
+    title = tag_value(tags, "title")
+    parts = song.stem.split(" - ", 1)
+    if len(parts) == 2:
+        artist = artist or parts[0]
+        title = title or parts[1]
+    title = title or song.stem
+    raw_genre = tag_value(tags, "genre")
+    group, genre = category(raw_genre)
+    raw_date = tag_value(tags, "originaldate", "date", "year", "release_date")
+    year_match = re.search(r"\\b(18|19|20|21)\\d{2}\\b", raw_date)
+    energy = store.read(song) if song.suffix.lower() in EXTENSIONS else None
+    return {
+        "artist": artist,
+        "title": title,
+        "album": tag_value(tags, "album"),
+        "album_artist": tag_value(tags, "albumartist", "album_artist"),
+        "genre": "" if group == "Uncategorized" else genre,
+        "genre_group": group,
+        "year": year_match.group(0) if year_match else "",
+        "bpm": tag_value(tags, "bpm", "tbpm"),
+        "key": tag_value(tags, "initialkey", "initial_key", "key"),
+        "energy": str(energy[0]) if energy else "",
+        "energy_source": str(energy[2]) if energy else "",
+        "isrc": tag_value(tags, "isrc"),
+        "duration_seconds": f"{seconds:.2f}",
+        "format": song.suffix[1:].upper(),
+        "relative_path": song.relative_to(folder).as_posix(),
+    }
+
+
+def safe_csv_value(value: str) -> str:
+    # Protect spreadsheet imports against formulas in untrusted song metadata.
+    return "'" + value if value.lstrip().startswith(("=", "+", "-", "@", "\\t", "\\r")) else value
+
+
+def cmd_export(args) -> int:
+    source = Path(args.folder).expanduser().resolve()
+    if not source.is_dir():
+        print(f"[ERROR] Folder not found: {source}", file=sys.stderr)
+        return 2
+    output_hint = Path(args.output).expanduser() if args.output else None
+    chosen = output_hint.suffix.lower().lstrip(".") if output_hint else ""
+    fmt = args.format or (chosen if chosen in {"csv", "txt", "json"} else "csv")
+    if output_hint and chosen in {"csv", "txt", "json"} and chosen != fmt:
+        print("[ERROR] Output extension conflicts with --format.", file=sys.stderr)
+        return 2
+    output = output_hint.resolve() if output_hint else source / f"song-list.{fmt}"
+    if output.suffix.lower() in EXPORT_EXTENSIONS:
+        print("[ERROR] Refusing to overwrite an audio file.", file=sys.stderr)
+        return 2
+    paths = (source.iterdir() if args.no_recursive else source.rglob("*"))
+    files = sorted(path for path in paths
+                   if path.is_file() and path.suffix.lower() in EXPORT_EXTENSIONS)
+    store = EnergyStore()
+    rows = []
+    failures = 0
+    try:
+        for song in files:
+            try:
+                rows.append(export_record(song, source, store))
+            except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
+                failures += 1
+                print(f"[EXPORT ERROR] {song}: {exc}", file=sys.stderr)
+                # Include the file in the inventory even when its tags are corrupt.
+                row = dict.fromkeys(EXPORT_COLUMNS, "")
+                row.update(title=song.stem, format=song.suffix[1:].upper(),
+                           relative_path=song.relative_to(source).as_posix())
+                rows.append(row)
+    finally:
+        store.close()
+    rows.sort(key=lambda row: (row["artist"].casefold(), row["title"].casefold(),
+                                row["relative_path"].casefold()))
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=".ytmscrap-export-", dir=output.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8-sig" if fmt == "csv" else "utf-8",
+                       newline="") as file:
+            if fmt == "csv":
+                writer = csv.DictWriter(file, fieldnames=EXPORT_COLUMNS)
+                writer.writeheader()
+                writer.writerows({key: safe_csv_value(row[key]) for key in EXPORT_COLUMNS}
+                                 for row in rows)
+            elif fmt == "txt":
+                for row in rows:
+                    title = f'{row["artist"]} - {row["title"]}' if row["artist"] else row["title"]
+                    file.write(title + "\\n")
+            else:
+                json.dump(rows, file, ensure_ascii=False, indent=2)
+                file.write("\\n")
+        os.replace(tmp_name, output)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+    print(f"[EXPORT] {len(rows)} songs -> {output} ({fmt.upper()}); {failures} tag errors.")
+    return 1 if failures else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Organize a DJ library without moving originals")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -359,6 +488,12 @@ def main() -> int:
     organize.add_argument("--output", help="Destination directory")
     organize.add_argument("--mode", choices=["playlists", "copy"], default="playlists")
     organize.add_argument("--dry-run", action="store_true")
+
+    export = sub.add_parser("export", help="Export a song list as CSV, TXT or JSON")
+    export.add_argument("folder", nargs="?", default=".")
+    export.add_argument("--format", choices=["csv", "txt", "json"], default=None)
+    export.add_argument("--output", help="Path to the exported list")
+    export.add_argument("--no-recursive", action="store_true", help="Only direct child files")
 
     energy = sub.add_parser("energy", help="Get, set or estimate energy (1-5)")
     actions = energy.add_subparsers(dest="action", required=True)
@@ -373,7 +508,11 @@ def main() -> int:
     analyze.add_argument("--force", action="store_true", help="Replace existing, even manual ratings")
 
     args = parser.parse_args()
-    return cmd_organize(args) if args.command == "organize" else cmd_energy(args)
+    if args.command == "organize":
+        return cmd_organize(args)
+    if args.command == "export":
+        return cmd_export(args)
+    return cmd_energy(args)
 
 
 if __name__ == "__main__":
