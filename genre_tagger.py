@@ -458,6 +458,8 @@ def main():
     parser.add_argument("--max-requests", type=int, default=500, help="Maksymalna liczba zapytań HTTP (0 = bez limitu)")
     parser.add_argument("--check-network", action="store_true", help="Sprawdź połączenie z MusicBrainz i Deezer")
     args = parser.parse_args()
+    if args.max_requests < 0:
+        parser.error('--max-requests must be >= 0')
     if args.check_network:
         lookup = DJLookup(max_requests=args.max_requests, offline=args.offline or args.normalize_only)
         endpoints = [
@@ -480,7 +482,7 @@ def main():
         return 2
     files = sorted(p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in EXTENSIONS)
     print(f"[Genre] Pliki: {len(files)} | Last.fm (opcjonalny) + Deezer + MusicBrainz + SQLite cache")
-    lookup = Lookup()
+    lookup = DJLookup(max_requests=args.max_requests, offline=args.offline or args.normalize_only)
     updated = kept = unknown = errors = 0
     try:
         for path in files:
