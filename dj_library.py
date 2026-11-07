@@ -262,6 +262,19 @@ def safe_name(text: str) -> str:
     return value[:100] or "Unknown"
 
 
+def same_content(left: Path, right: Path) -> bool:
+    if left.stat().st_size != right.stat().st_size:
+        return False
+    # Only hash on path collisions. Never assume equal sizes imply equal audio.
+    def digest(path: Path) -> str:
+        sha = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                sha.update(chunk)
+        return sha.hexdigest()
+    return digest(left) == digest(right)
+
+
 def playlist_write(path: Path, files: list[Path], preview: bool):
     if preview:
         print(f"[PREVIEW] {path}: {len(files)} tracks")
@@ -299,12 +312,13 @@ def cmd_organize(args) -> int:
                 target = song
                 if args.mode == "copy":
                     target_dir = output / safe_name(main) / safe_name(sub)
-                    target = target_dir / safe_name(song.name)
-                    if target.exists():
-                        # Don't replace an existing copy, even if it differs.
-                        if target.stat().st_size != song.stat().st_size:
-                            digest = hashlib.sha256(str(song.relative_to(source)).encode()).hexdigest()[:8]
-                            target = target_dir / (safe_name(song.stem) + "-" + digest + song.suffix)
+                    basename = safe_name(song.stem)[:90] + song.suffix.lower()
+                    target = target_dir / basename
+                    if target.exists() and not same_content(target, song):
+                        digest = hashlib.sha256(str(song.relative_to(source)).encode()).hexdigest()[:8]
+                        target = target_dir / (safe_name(song.stem)[:80] + "-" + digest + song.suffix.lower())
+                    if target.exists() and not same_content(target, song):
+                        raise FileExistsError(f"Refusing to overwrite a different file: {target}")
                     if not target.exists():
                         print(f"[{'PREVIEW' if args.dry_run else 'COPY'}] {song} -> {target}")
                         if not args.dry_run:
