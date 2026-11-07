@@ -362,3 +362,30 @@ The default is playlist-only mode, which never moves audio and preserves Rekordb
 file paths. The optional copy mode duplicates audio into genre folders and builds
 playlists pointing to the copies. It never deletes originals. Import the M3U8
 files into Rekordbox, and use Reload Tag after editing FLAC metadata.
+
+## Export a song list
+
+Create an inventory of all supported audio files in a folder. Subfolders are included by default. This does **not** change or move any songs, and no network/API requests are made.
+
+```bash
+# Spreadsheet-friendly CSV (default): song-list.csv inside the folder
+ytmscrap --export-songs "$HOME/Music/DJ"
+
+# Plain artist - title list
+ytmscrap --export-songs "$HOME/Music/DJ" --format txt
+
+# Detailed JSON, including genres and saved 1-5 energy ratings
+ytmscrap --export-songs "$HOME/Music/DJ" --format json
+
+# Select your output path and include only songs directly in the folder
+ytmscrap --export-songs "$HOME/Music/DJ" --output "$HOME/Desktop/dj-library.csv" --no-recursive
+```
+
+CSV and JSON include artist, title, album, album artist, normalized genre, genre group,
+year, BPM, key, saved energy (if set), energy source, ISRC, duration, format and
+relative path. TXT contains one `Artist - Title` per line. CSV is saved with a
+UTF-8 BOM to open Polish characters correctly in spreadsheet apps. MP3, M4A,
+FLAC, WAV, OGG/Opus, AAC and AIFF files are recognized; energy scores are
+read from the FLAC tags or the existing WAV cache. Missing fields remain blank.
+Songs with invalid tags stay in the list using their filenames and raise a
+warning. Output is rewritten on each export; audio files are never overwritten.
