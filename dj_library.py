@@ -390,7 +390,7 @@ def export_record(song: Path, folder: Path, store: EnergyStore) -> dict[str, str
     raw_genre = tag_value(tags, "genre")
     group, genre = category(raw_genre)
     raw_date = tag_value(tags, "originaldate", "date", "year", "release_date")
-    year_match = re.search(r"\\b(18|19|20|21)\\d{2}\\b", raw_date)
+    year_match = re.search(r"\b(18|19|20|21)\d{2}\b", raw_date)
     energy = store.read(song) if song.suffix.lower() in EXTENSIONS else None
     return {
         "artist": artist,
@@ -413,7 +413,7 @@ def export_record(song: Path, folder: Path, store: EnergyStore) -> dict[str, str
 
 def safe_csv_value(value: str) -> str:
     # Protect spreadsheet imports against formulas in untrusted song metadata.
-    return "'" + value if value.lstrip().startswith(("=", "+", "-", "@", "\\t", "\\r")) else value
+    return "'" + value if value.lstrip().startswith(("=", "+", "-", "@", "\t", "\r")) else value
 
 
 def cmd_export(args) -> int:
@@ -467,10 +467,10 @@ def cmd_export(args) -> int:
             elif fmt == "txt":
                 for row in rows:
                     title = f'{row["artist"]} - {row["title"]}' if row["artist"] else row["title"]
-                    file.write(title + "\\n")
+                    file.write(title + "\n")
             else:
                 json.dump(rows, file, ensure_ascii=False, indent=2)
-                file.write("\\n")
+                file.write("\n")
         os.replace(tmp_name, output)
     finally:
         if os.path.exists(tmp_name):
