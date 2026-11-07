@@ -40,7 +40,7 @@ class GenreTests(unittest.TestCase):
                 {"genres": {"data": [{"name": "Hip-Hop/Rap"}]}},
             ]
             with patch.object(lookup, "request", side_effect=api):
-                self.assertEqual(lookup.find("White 2115", "California"), ("Hip-Hop/Rap", "Deezer"))
+                self.assertEqual(lookup.find("White 2115", "California"), ("Hip-Hop", "Deezer"))
             lookup.save()
             with patch.object(lookup, "request", side_effect=AssertionError("Cache expected")):
                 self.assertEqual(lookup.find("White 2115", "California")[0], "Hip-Hop")
