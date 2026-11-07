@@ -369,7 +369,10 @@ class DJLookup(Lookup):
 
     def request(self, url, mb=False):
         host = urlparse(url).hostname or ""
-        if self.offline or host in self.blocked:
+        if self.offline:
+            return {}
+        if host in self.blocked:
+            self.request_failed = True  # A blocked API is not a genuine no-genre result.
             return {}
         delay = 1.2 if mb else .65
         for retry in range(3):
