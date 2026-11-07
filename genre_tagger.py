@@ -263,7 +263,7 @@ DJ_GENRES = {
     "UK Garage": "uk garage|ukg|2 step garage",
     "Phonk": "phonk",
     "Drift Phonk": "drift phonk",
-    "Hip-Hop": "hip hop|hip-hop|hiphop|rap|rap music",
+    "Hip-Hop": "hip hop|hip-hop|hiphop|rap|rap music|hip-hop/rap|hip hop rap",
     "Polish Hip-Hop": "polish hip hop|polish hip-hop|polski hip hop|polish rap|polski rap",
     "Trap": "trap|trap music|trap rap",
     "Polish Trap": "polish trap|polski trap",
