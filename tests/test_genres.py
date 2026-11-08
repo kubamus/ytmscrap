@@ -26,7 +26,7 @@ class GenreTests(unittest.TestCase):
         self.assertEqual(g.confidence("California", "White 2115", "California", "Different Artist"), 0)
         self.assertEqual(g.confidence("California (DJ Remix)", "White 2115", "California", "White 2115"), 0)
         self.assertEqual(g.genre_from([{"name": "Music", "count": 50},
-                                       {"name": "Hip-Hop/Rap", "count": 3}]), "Hip-Hop/Rap")
+                                       {"name": "Hip-Hop/Rap", "count": 3}]), "Hip-Hop")
 
     def test_api_fallback_and_cache(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -40,10 +40,10 @@ class GenreTests(unittest.TestCase):
                 {"genres": {"data": [{"name": "Hip-Hop/Rap"}]}},
             ]
             with patch.object(lookup, "request", side_effect=api):
-                self.assertEqual(lookup.find("White 2115", "California"), ("Hip-Hop/Rap", "Deezer"))
+                self.assertEqual(lookup.find("White 2115", "California"), ("Hip-Hop", "Deezer"))
             lookup.save()
             with patch.object(lookup, "request", side_effect=AssertionError("Cache expected")):
-                self.assertEqual(lookup.find("White 2115", "California")[0], "Hip-Hop/Rap")
+                self.assertEqual(lookup.find("White 2115", "California")[0], "Hip-Hop")
 
     def test_file_tags_and_audio_not_changed(self):
         with tempfile.TemporaryDirectory() as tmp:

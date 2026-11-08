@@ -11,6 +11,7 @@ tmp_script=''
 tmp_helper=''
 tmp_rekordbox=''
 tmp_proxy=''
+tmp_library=''
 tmp_version=''
 if [ -n "$remote_repo" ]; then
   if [[ ! "$remote_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
@@ -22,8 +23,9 @@ if [ -n "$remote_repo" ]; then
   tmp_helper=$(mktemp)
   tmp_rekordbox=$(mktemp)
   tmp_proxy=$(mktemp)
+  tmp_library=$(mktemp)
   tmp_version=$(mktemp)
-  trap 'rm -f "$tmp_script" "$tmp_helper" "$tmp_rekordbox" "$tmp_proxy" "$tmp_version"' EXIT
+  trap 'rm -f "$tmp_script" "$tmp_helper" "$tmp_rekordbox" "$tmp_proxy" "$tmp_library" "$tmp_version"' EXIT
   info "Pobieranie CLI z publicznego repozytorium $remote_repo"
   # Distinct URLs avoid stale copies from the GitHub Raw CDN after new commits.
   cache_key="$(date +%s)-$"
@@ -37,6 +39,8 @@ if [ -n "$remote_repo" ]; then
   rekordbox_source=$tmp_rekordbox
   curl -fL --retry 2 -H 'Cache-Control: no-cache' --output "$tmp_proxy" "$remote_base/proxy_fallback.py?refresh=$cache_key"
   proxy_source=$tmp_proxy
+  curl -fL --retry 2 -H 'Cache-Control: no-cache' --output "$tmp_library" "$remote_base/dj_library.py?refresh=$cache_key"
+  library_source=$tmp_library
   curl -fL --retry 2 -H 'Cache-Control: no-cache' --output "$tmp_version" "$remote_base/VERSION?refresh=$cache_key"
   version_source=$tmp_version
 else
@@ -45,8 +49,9 @@ else
   helper_source="$base_dir/genre_tagger.py"
   rekordbox_source="$base_dir/rekordbox.py"
   proxy_source="$base_dir/proxy_fallback.py"
+  library_source="$base_dir/dj_library.py"
   version_source="$base_dir/VERSION"
-  if [ ! -f "$script_source" ] || [ ! -f "$helper_source" ] || [ ! -f "$rekordbox_source" ] || [ ! -f "$proxy_source" ] || [ ! -f "$version_source" ]; then
+  if [ ! -f "$script_source" ] || [ ! -f "$helper_source" ] || [ ! -f "$rekordbox_source" ] || [ ! -f "$proxy_source" ] || [ ! -f "$library_source" ] || [ ! -f "$version_source" ]; then
     err 'Brak plików ytmscrap lub modułów Python obok install.sh. Pobierz całe repozytorium lub użyj trybu OWNER/REPO.'
     exit 1
   fi
@@ -212,6 +217,7 @@ mkdir -p -- "$share_dir"
 cp -- "$helper_source" "$share_dir/genre_tagger.py"
 cp -- "$rekordbox_source" "$share_dir/rekordbox.py"
 cp -- "$proxy_source" "$share_dir/proxy_fallback.py"
+cp -- "$library_source" "$share_dir/dj_library.py"
 if [ ! -x "$share_dir/venv/bin/python" ] && [ ! -x "$share_dir/venv/Scripts/python.exe" ]; then
   info 'Tworzenie środowiska Python'
   "$python_exec" -m venv "$share_dir/venv"

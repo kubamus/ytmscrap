@@ -1,6 +1,6 @@
 # ytmscrap
 
-Proste CLI do pobierania **pojedynczych utworów i całych playlist z YouTube oraz YouTube Music** do plików **WAV lub FLAC** z metadanymi i okładkami, gotowych do importu w Rekordbox. Tryb Rekordbox przycina szerokie miniatury YouTube do formatu 1:1. Narzędzie potrafi też wyszukać gatunek `Genre` na podstawie MusicBrainz i Deezer. Działa w **Git Bash na Windows 10/11** i w terminalu **macOS**.
+Proste CLI do pobierania **pojedynczych utworów i całych playlist z YouTube oraz YouTube Music** do plików **WAV lub FLAC** z metadanymi i okładkami, gotowych do importu w Rekordbox. Tryb Rekordbox przycina szerokie miniatury YouTube do formatu 1:1. Narzędzie potrafi też znormalizować gatunki `Genre`, korzystając z Last.fm (opcjonalnie), Deezer i MusicBrainz oraz lokalnego cache SQLite. Działa w **Git Bash na Windows 10/11** i w terminalu **macOS**.
 
 > **Jakość:** YouTube Music dostarcza audio skompresowane stratnie (AAC/Opus). WAV i FLAC powstają z tego samego źródła i **nie poprawiają jego jakości**. WAV zapisuje nieskompresowany PCM, a FLAC kompresuje bezstratnie, więc oba brzmią tak samo. WAV zajmuje zwykle więcej miejsca. Pobieraj tylko materiały, do których masz prawa lub zgodę.
 
@@ -217,29 +217,48 @@ Nieudane zapytania sieciowe **nie trafiają do cache jako brak gatunku**. Stare 
 
 ## Automatyczne gatunki Genre
 
-Po pobraniu program pyta **„Automatycznie uzupełnić gatunki Genre?”**. Domyślnie próbuje naprawić gatunki w wybranym folderze. Bez pobierania utworów ponownie możesz użyć:
+`ytmscrap --fix-genres` uzupełnia puste tagi i **normalizuje już istniejące gatunki** bez zbędnych zapytań HTTP. Działa rekurencyjnie z FLAC i WAV, także z osobnymi plikami pobranymi z TIDAL.
 
 ```bash
-ytmscrap --fix-genres .                      # bieżący folder i podfoldery
-ytmscrap --fix-genres "/Users/me/Music/DJ"   # wskazany folder
-ytmscrap --fix-genres . --dry-run            # tylko pokaż propozycje
+# Najpierw podgląd: nie zmienia plików muzycznych.
+ytmscrap --fix-genres "$HOME/Music/DJ" --dry-run
+
+# Normalizuj gatunki bez używania internetu:
+ytmscrap --fix-genres "$HOME/Music/DJ" --normalize-only
+
+# Uzupełnij brakujące gatunki i normalizuj istniejące:
+ytmscrap --fix-genres "$HOME/Music/DJ"
+
+# Używaj wyłącznie lokalnego cache:
+ytmscrap --fix-genres "$HOME/Music/DJ" --offline
+
+# Przetwarzaj większe biblioteki w częściach:
+ytmscrap --fix-genres "$HOME/Music/DJ" --max-requests 1000
 ```
 
-- Wyszukuje gatunki w **MusicBrainz** (nagranie lub wydanie) i, gdy brak danych, w **Deezer** (gatunek albumu). Nie wymaga klucza API. Działanie wymaga internetu.
-- Sprawdza zgodność tytułu i wykonawcy. Nie zawsze znajdzie gatunek, zwłaszcza dla remixów, mashupów i mniej znanych polskich nagrań; zamiast zgadywać, pozostawia pole puste lub `Music`.
-- Zmienia wyłącznie `Genre` — i tylko jeśli tag jest pusty lub ma wartość `Music`. Nie nadpisuje pozostałych gatunków.
-- **FLAC**: zmienia tag Vorbis Comment bez ponownego kodowania audio; zachowuje okładkę. **WAV**: FFmpeg zapisuje `Genre` jako RIFF INFO/IGNR przez `-c:a copy`, czyli bez zmiany próbek audio; wymaga chwilowo miejsca na kopię pliku.
-- Wyniki udanych zapytań zapisuje w `~/.cache/ytmscrap/genres-v1.json`. MusicBrainz ma limit **1 zapytanie na sekundę**, więc duże foldery mogą zająć kilka minut.
-- Jeśli pole `Genre` nie odświeży się od razu w Rekordboxie, zaznacz utwory w **Collection** → **Reload Tag**. Przed użyciem tej opcji zwróć uwagę, że odświeża również inne tagi odczytane z pliku.
+**Last.fm (opcjonalny):** ustaw klucz API jako `LASTFM_API_KEY`. Bez niego program użyje Deezer i MusicBrainz; nie trzeba podawać klucza żadnej z tych usług.
 
-Uwaga: przy instalacji starszej wersji ponownie uruchom instalator, żeby pobrać `genre_tagger.py`, Python i Mutagen.
+```bash
+export LASTFM_API_KEY="YOUR_LASTFM_API_KEY"
+ytmscrap --fix-genres "$HOME/Music/DJ"
+```
+
+**Kolejność źródeł:** istniejący gatunek → SQLite cache (ISRC lub wykonawca + tytuł) → Last.fm (gdy jest klucz) → Deezer → MusicBrainz. Nie pobiera kolejnych źródeł po pierwszym znalezionym gatunku. Sprawdza tytuły i wykonawców przed przypisaniem gatunku. `--max-requests` ogranicza liczbę zapytań w jednym uruchomieniu (domyślnie 500); można wznowić polecenie, korzystając z cache.
+
+**Gatunki pod DJ sety:** normalizuje `dnb` → `Drum & Bass`, `polski rap` → `Polish Hip-Hop`, `hardtechno` → `Hard Techno`. Zachowuje rozróżnienie m.in. `Jumpstyle`, `Hardtekk`, `Hardtek`, `Hardstyle`, `Rawstyle`, `Frenchcore`, `Uptempo Hardcore`, `Neurofunk`, `Disco Polo` i `Polish Trap`. Nie zgaduje polskiego gatunku wyłącznie na podstawie narodowości artysty. Nieznane, istniejące gatunki zostają bez zmian.
+
+**Cache i limity:** `~/.cache/ytmscrap/genres.sqlite3`; dodatnie wpisy 90 dni, udane wyszukiwania bez wyniku 7 dni. Błędy połączeń, 429 i 5xx nie trafiają do cache jako brak gatunku. Zapytania są wysyłane pojedynczo z odstępami: MusicBrainz co najmniej 1,2 s, inne serwisy 0,65 s, z dodatkowymi przerwami po 429/5xx. <https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting>
+
+**Zapis:** w FLAC zmienia tylko Vorbis Comment `GENRE` bez konwersji audio. Dla WAV używa FFmpeg i kopiowania strumienia PCM do nowego kontenera. Importując zmiany do Rekordbox, zaznacz utwory i wybierz **Reload Tag**. Przed masowym uruchomieniem skopiuj kilka przykładowych plików i przetestuj na nich `--dry-run`.
+
+Program nie zawiera automatycznego lokalnego modelu AI do klasyfikacji nierozpoznanych utworów. Gdy serwisy nie zwrócą wiarygodnego gatunku, pozostawia tag pusty zamiast zgadywać.
 
 ## Przydatne komendy
 
 ```bash
 ytmscrap update             # aktualizuj CLI i moduły, jeśli jest nowa wersja
 ytmscrap --version         # pokaż zainstalowaną wersję
-ytmscrap --check-genres    # test połączenia z MusicBrainz i Deezer
+ytmscrap --check-genres    # test połączenia z bazami gatunków
 ytmscrap --fix-genres .    # napraw gatunki w istniejących plikach
 ytmscrap --help        # pomoc
 ytmscrap --check       # sprawdzenie zależności
@@ -298,3 +317,75 @@ bash install.sh
 ## Licencja
 
 MIT. Narzędzia `yt-dlp`, FFmpeg i Deno mają własne licencje i są instalowane niezależnie — nie są dołączone do repo.
+
+## DJ library: genre playlists and energy (1–5)
+
+These commands work offline after genre tagging. They do not query MusicBrainz or Discogs again.
+
+```bash
+# Estimate each song's energy (preview only)
+ytmscrap --energy analyze "$HOME/Music/DJ"
+
+# Save ratings; keep existing values by default
+ytmscrap --energy analyze "$HOME/Music/DJ" --write
+
+# Read/set a rating for one song
+ytmscrap --energy get "$HOME/Music/DJ/Artist - Song.flac"
+ytmscrap --energy set "$HOME/Music/DJ/Artist - Song.flac" 5
+
+# Force re-analysis (also replaces manual ratings)
+ytmscrap --energy analyze "$HOME/Music/DJ" --write --force
+
+# Generate M3U8 playlists grouped by genre, subgenre, and energy
+ytmscrap --organize-library "$HOME/Music/DJ" --dry-run
+ytmscrap --organize-library "$HOME/Music/DJ"
+
+# Optional copies arranged into genre folders; originals stay put
+ytmscrap --organize-library "$HOME/Music/DJ" --mode copy --output "$HOME/Music/DJ-Organized" --dry-run
+ytmscrap --organize-library "$HOME/Music/DJ" --mode copy --output "$HOME/Music/DJ-Organized"
+```
+
+The program keeps specific genres (Trap, Dance-Pop, Hard Techno, etc.) and groups
+them into practical playlists for Polish Hip-Hop, Hip-Hop, Pop, Rock, R&B, Polish Party,
+and Electronic. It does not guess a track is Polish based on a generic Trap or Pop tag.
+Tracks without a genre go to Uncategorized.
+
+The 1–5 energy score is a rough offline estimate based on three audio excerpts,
+volume, attack rate and contrast. It is **not** a trained mood/party-energy model.
+Inspect and override important tracks. Manual ratings persist unless you specify
+`--force`. FLAC uses custom `ENERGY`, `ENERGY_SCORE`, `ENERGY_SOURCE` tags,
+without re-encoding audio; WAV ratings live only in the local SQLite sidecar
+at `~/.cache/ytmscrap/energy.sqlite3`. Rekordbox may not display custom ENERGY
+tags, so the tool exports `Energy/Energy N.m3u8` playlists too.
+
+The default is playlist-only mode, which never moves audio and preserves Rekordbox
+file paths. The optional copy mode duplicates audio into genre folders and builds
+playlists pointing to the copies. It never deletes originals. Import the M3U8
+files into Rekordbox, and use Reload Tag after editing FLAC metadata.
+
+## Export a song list
+
+Create an inventory of all supported audio files in a folder. Subfolders are included by default. This does **not** change or move any songs, and no network/API requests are made.
+
+```bash
+# Spreadsheet-friendly CSV (default): song-list.csv inside the folder
+ytmscrap --export-songs "$HOME/Music/DJ"
+
+# Plain artist - title list
+ytmscrap --export-songs "$HOME/Music/DJ" --format txt
+
+# Detailed JSON, including genres and saved 1-5 energy ratings
+ytmscrap --export-songs "$HOME/Music/DJ" --format json
+
+# Select your output path and include only songs directly in the folder
+ytmscrap --export-songs "$HOME/Music/DJ" --output "$HOME/Desktop/dj-library.csv" --no-recursive
+```
+
+CSV and JSON include artist, title, album, album artist, normalized genre, genre group,
+year, BPM, key, saved energy (if set), energy source, ISRC, duration, format and
+relative path. TXT contains one `Artist - Title` per line. CSV is saved with a
+UTF-8 BOM to open Polish characters correctly in spreadsheet apps. MP3, M4A,
+FLAC, WAV, OGG/Opus, AAC and AIFF files are recognized; energy scores are
+read from the FLAC tags or the existing WAV cache. Missing fields remain blank.
+Songs with invalid tags stay in the list using their filenames and raise a
+warning. Output is rewritten on each export; audio files are never overwritten.

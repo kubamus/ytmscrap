@@ -220,14 +220,251 @@ class Lookup:
             temp.write_text(json.dumps(self.cache, ensure_ascii=False, indent=2), encoding="utf-8")
             temp.replace(self.path)
 
+
+# A DJ-focused vocabulary: keep dance subgenres distinct instead of flattening
+# them to Electronic, and never infer Polish origin from a generic rap tag.
+DJ_GENRES = {
+    "Jumpstyle": "jumpstyle|polska jumpstyle|polish jumpstyle",
+    "Hardtekk": "hardtekk|hard tekk|slowed hardtekk",
+    "Hardtek": "hardtek|hardtekno|hard tekno",
+    "Hard Techno": "hard techno|hardtechno",
+    "Industrial Techno": "industrial techno",
+    "Schranz": "schranz",
+    "Hardstyle": "hardstyle|hard style",
+    "Rawstyle": "rawstyle|raw hardstyle",
+    "Hard Dance": "hard dance|harddance",
+    "Hardcore": "hardcore techno|hardcore",
+    "Uptempo Hardcore": "uptempo|uptempo hardcore",
+    "Frenchcore": "frenchcore",
+    "Gabber": "gabber",
+    "Happy Hardcore": "happy hardcore",
+    "Techno": "techno",
+    "Melodic Techno": "melodic techno",
+    "Acid Techno": "acid techno",
+    "House": "house|house music",
+    "Tech House": "tech house|techhouse",
+    "Deep House": "deep house",
+    "Bass House": "bass house",
+    "Afro House": "afro house",
+    "Electro House": "electro house",
+    "Progressive House": "progressive house",
+    "Big Room": "big room|big room house",
+    "Trance": "trance",
+    "Psytrance": "psytrance|psy trance",
+    "Eurodance": "eurodance|euro dance",
+    "Dance-Pop": "dance pop|dancepop|dance-pop",
+    "Drum & Bass": "drum and bass|drum & bass|dnb|drum n bass|d&b",
+    "Liquid Drum & Bass": "liquid drum and bass|liquid drum & bass|liquid dnb|liquid funk",
+    "Dancefloor Drum & Bass": "dancefloor dnb|dancefloor drum and bass",
+    "Neurofunk": "neurofunk|neuro dnb",
+    "Jungle": "jungle",
+    "Dubstep": "dubstep",
+    "Riddim": "riddim|riddim dubstep",
+    "UK Garage": "uk garage|ukg|2 step garage",
+    "Phonk": "phonk",
+    "Drift Phonk": "drift phonk",
+    "Hip-Hop": "hip hop|hip-hop|hiphop|rap|rap music|hip-hop/rap|hip hop rap",
+    "Polish Hip-Hop": "polish hip hop|polish hip-hop|polski hip hop|polish rap|polski rap",
+    "Trap": "trap|trap music|trap rap",
+    "Polish Trap": "polish trap|polski trap",
+    "Drill": "drill",
+    "UK Drill": "uk drill",
+    "R&B": "rnb|r&b|rhythm and blues",
+    "Reggaeton": "reggaeton",
+    "Dancehall": "dancehall",
+    "Disco Polo": "disco polo|discopolo",
+    "Polish Pop": "polish pop|polski pop",
+    "Pop": "pop|pop music",
+    "Rock": "rock|rock music",
+    "Pop Rock": "pop rock|pop-rock",
+    "Alternative Rock": "alternative rock|alt rock",
+    "Indie Rock": "indie rock",
+    "Punk Rock": "punk rock|punk",
+    "Metal": "metal|heavy metal",
+    "Nu Metal": "nu metal|numetal",
+    "Funk": "funk",
+    "Disco": "disco",
+    "Synthwave": "synthwave|retrowave",
+    "Synth-Pop": "synth pop|synthpop",
+    "Jazz": "jazz",
+    "Blues": "blues",
+    "Soul": "soul",
+    "Country": "country",
+    "Folk": "folk",
+    "Electronic": "electronic|electronica|electronic music",
+    "EDM": "edm|electronic dance music",
+    "Dance": "dance|dance music",
+}
+DJ_ALIASES = {norm(alias): name for name, aliases in DJ_GENRES.items()
+              for alias in (name + "|" + aliases).split("|")}
+BROAD = {"Electronic", "EDM", "Dance", "Pop", "Rock", "Hip-Hop", "House", "Techno", "Hardcore", "R&B"}
+NOISE_TAGS = {"seen live", "favorite", "favourite", "favorites", "polish", "poland",
+              "male vocalists", "female vocalists", "awesome", "spotify", "youtube"}
+
+
+def dj_canonical(label, strict=False):
+    label = str(label).strip()
+    key = norm(label)
+    if key in INVALID or key in NOISE_TAGS:
+        return ""
+    return DJ_ALIASES.get(key, "" if strict else label)
+
+
+def dj_best(labels):
+    choices = {}
+    for label, count in labels:
+        name = dj_canonical(label, strict=True)
+        if name:
+            choices[name] = max(int(count), choices.get(name, -1))
+    if not choices:
+        return ""
+    peak = max(choices.values())
+    viable = [(name, score) for name, score in choices.items() if score >= peak * 0.25]
+    return max(viable, key=lambda item: (item[0] not in BROAD, item[1], item[0]))[0]
+
+
+def normalize_genre(existing):
+    parts = re.split(r"\s*[;,|]\s*|\s+/\s+", existing)
+    known = [(part, 1) for part in parts if dj_canonical(part, strict=True)]
+    return dj_best(known) if known else dj_canonical(existing)
+
+
+def genre_from(entries):
+    choices = []
+    for item in entries if isinstance(entries, list) else []:
+        if isinstance(item, dict):
+            try:
+                choices.append((item.get("name", ""), int(item.get("count", 1))))
+            except (TypeError, ValueError):
+                pass
+    return dj_best(choices)
+
+
+class RequestBudget(Exception):
+    pass
+
+
+class DJLookup(Lookup):
+    """SQLite cache, Last.fm first, polite API pacing and 429 backoff."""
+    def __init__(self, max_requests=500, offline=False):
+        super().__init__()
+        import sqlite3
+        self.db_path = Path.home() / ".cache/ytmscrap/genres.sqlite3"
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(self.db_path)
+        self.db.execute("CREATE TABLE IF NOT EXISTS genres (key TEXT PRIMARY KEY, genre TEXT NOT NULL, source TEXT NOT NULL, expires INTEGER NOT NULL)")
+        # Bring forward valid positive results from the old JSON cache.
+        for key, item in self.cache.items():
+            genre = dj_canonical(item.get("genre", ""), strict=True) if isinstance(item, dict) else ""
+            if genre:
+                self.db.execute("INSERT OR IGNORE INTO genres VALUES (?, ?, ?, ?)",
+                                ("track:" + key, genre, str(item.get("source", "legacy")), int(time.time()) + 90 * 86400))
+        self.db.commit()
+        self.requests = 0
+        self.max_requests = max_requests
+        self.offline = offline
+        self.api_key = os.environ.get("LASTFM_API_KEY", "")
+        self.last_by_host = {}
+        self.blocked = set()
+
+    def request(self, url, mb=False):
+        host = urlparse(url).hostname or ""
+        if self.offline:
+            return {}
+        if host in self.blocked:
+            self.request_failed = True  # A blocked API is not a genuine no-genre result.
+            return {}
+        delay = 1.2 if mb else .65
+        for retry in range(3):
+            if self.max_requests and self.requests >= self.max_requests:
+                raise RequestBudget("Request budget reached. Run again to resume from the cache.")
+            wait = delay - (time.monotonic() - self.last_by_host.get(host, 0))
+            if wait > 0:
+                time.sleep(wait)
+            self.last_by_host[host] = time.monotonic()
+            self.requests += 1
+            req = Request(url, headers={"User-Agent": AGENT, "Accept": "application/json"})
+            try:
+                with urlopen(req, timeout=15, context=self.ssl_context) as response:
+                    data = json.load(response)
+                if not isinstance(data, dict) or data.get("error"):
+                    raise ValueError(data.get("message", "Invalid API response") if isinstance(data, dict) else "Invalid API response")
+                self.successful_sources.add(host)
+                return data
+            except HTTPError as error:
+                self.request_failed = True
+                self.failed_sources.add(host)
+                if error.code not in (429, 500, 502, 503, 504):
+                    print(f"  [API] {host}: HTTP {error.code}", file=sys.stderr)
+                    break
+                retry_after = error.headers.get("Retry-After", "")
+                seconds = float(retry_after) if retry_after.replace(".", "", 1).isdigit() else 0
+                time.sleep(min(30.0, max(seconds, 2 ** (retry + 1))))
+            except (URLError, TimeoutError, OSError, ValueError) as error:
+                self.request_failed = True
+                self.failed_sources.add(host)
+                if retry == 2:
+                    print(f"  [API] {host}: {error}", file=sys.stderr)
+                else:
+                    time.sleep(2 ** retry)
+        self.blocked.add(host)
+        return {}
+
+    def lastfm(self, artist, title):
+        if not self.api_key:
+            return ""
+        url = "https://ws.audioscrobbler.com/2.0/?" + urlencode({
+            "method": "track.getTopTags", "artist": lead(artist), "track": title,
+            "api_key": self.api_key, "format": "json", "autocorrect": 1
+        })
+        return genre_from(self.request(url).get("toptags", {}).get("tag", []))
+
+    def find(self, artist, title, isrc=""):
+        keys = (["isrc:" + norm(isrc)] if isrc else []) + ["track:" + norm(artist) + "|" + norm(title)]
+        for key in keys:
+            row = self.db.execute("SELECT genre, source FROM genres WHERE key=? AND expires>?",
+                                  (key, int(time.time()))).fetchone()
+            if row:
+                return row[0], "cache/" + row[1]
+        if self.offline:
+            return "", "offline"
+        self.request_failed = False
+        sources = (("Last.fm", self.lastfm), ("Deezer", self.deezer), ("MusicBrainz", self.musicbrainz))
+        for source, finder in sources:
+            found = finder(artist, title)
+            if found:
+                genre = dj_canonical(found, strict=True)
+                if genre:
+                    for key in keys:
+                        self.db.execute("INSERT OR REPLACE INTO genres VALUES (?, ?, ?, ?)",
+                                        (key, genre, source, int(time.time()) + 90 * 86400))
+                    self.db.commit()
+                    return genre, source
+        if not self.request_failed:
+            for key in keys:
+                self.db.execute("INSERT OR REPLACE INTO genres VALUES (?, ?, ?, ?)",
+                                (key, "", "not-found", int(time.time()) + 7 * 86400))
+            self.db.commit()
+        return "", "not found"
+
+    def save(self):
+        self.db.commit()
+        self.db.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Wyszukaj i zapisz brakujące gatunki dla Rekordbox")
     parser.add_argument("folder", nargs="?", default=".", help="Folder z WAV/FLAC")
     parser.add_argument("--dry-run", action="store_true", help="Pokaż gatunki bez zapisywania")
+    parser.add_argument("--normalize-only", action="store_true", help="Tylko normalizuj istniejące gatunki; bez API")
+    parser.add_argument("--offline", action="store_true", help="Tylko cache i normalizacja, bez API")
+    parser.add_argument("--max-requests", type=int, default=500, help="Maksymalna liczba zapytań HTTP (0 = bez limitu)")
     parser.add_argument("--check-network", action="store_true", help="Sprawdź połączenie z MusicBrainz i Deezer")
     args = parser.parse_args()
+    if args.max_requests < 0:
+        parser.error('--max-requests must be >= 0')
     if args.check_network:
-        lookup = Lookup()
+        lookup = DJLookup(max_requests=args.max_requests, offline=args.offline or args.normalize_only)
         endpoints = [
             ("MusicBrainz", "https://musicbrainz.org/ws/2/recording/?" + urlencode({"query": "artist:abba", "fmt": "json", "limit": 1}), True),
             ("Deezer", "https://api.deezer.com/search/track?" + urlencode({"q": "abba", "limit": 1}), False),
@@ -247,21 +484,32 @@ def main():
         print(f"[BŁĄD] Brak folderu: {folder}", file=sys.stderr)
         return 2
     files = sorted(p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in EXTENSIONS)
-    print(f"[Genre] Pliki: {len(files)} | MusicBrainz + Deezer")
-    lookup = Lookup()
+    print(f"[Genre] Pliki: {len(files)} | Last.fm (opcjonalny) + Deezer + MusicBrainz + SQLite cache")
+    lookup = DJLookup(max_requests=args.max_requests, offline=args.offline or args.normalize_only)
     updated = kept = unknown = errors = 0
     try:
         for path in files:
             try:
                 artist, title, current = tags(path)
-                if norm(current) not in INVALID:
-                    kept += 1
+                normalized = normalize_genre(current)
+                if normalized:
+                    if normalized == current:
+                        kept += 1
+                        continue
+                    if not args.dry_run:
+                        write(path, normalized)
+                    updated += 1
+                    print(f"[{'PODGLĄD' if args.dry_run else 'OK'}] {path.name}: {current} -> {normalized} (normalizacja)")
+                    continue
+                if args.normalize_only:
+                    unknown += 1
                     continue
                 if not artist or not title:
                     print(f"[BRAK DANYCH] {path.name}")
                     unknown += 1
                     continue
-                genre, source = lookup.find(artist, title)
+                isrc = (FLAC(path).get("isrc") or [""])[0] if path.suffix.lower() == ".flac" else ""
+                genre, source = lookup.find(artist, title, isrc)
                 if not genre:
                     print(f"[BRAK GATUNKU] {artist} - {title}")
                     unknown += 1
@@ -277,6 +525,9 @@ def main():
     except KeyboardInterrupt:
         print("\nPrzerwano, dotychczasowe zmiany zachowano.")
         return 130
+    except RequestBudget as error:
+        print(f"[LIMIT] {error}", file=sys.stderr)
+        return 3
     except ConnectionError as error:
         print(f"[BŁĄD] {error}", file=sys.stderr)
         return 2
@@ -284,6 +535,7 @@ def main():
         lookup.save()
     print(f"[Genre] Uzupełnione: {updated}, już poprawne: {kept}, brak danych: {unknown}, błędy: {errors}.")
     print("W Rekordbox zaznacz utwory i wybierz Reload Tag.")
+    print(f"[Genre] Wykonane zapytania API: {lookup.requests}")
     return 1 if errors else 0
 
 if __name__ == "__main__":
