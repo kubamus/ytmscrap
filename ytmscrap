@@ -14,6 +14,11 @@ Użycie:
   ytmscrap --fix-rekordbox [FOLDER] [--dry-run]  FLAC + kwadratowe okładki
   ytmscrap --fix-genres [FOLDER] [--dry-run]  Uzupełnij Genre w plikach FLAC/WAV
   ytmscrap --check-genres  Sprawdź połączenie z bazami gatunków
+  ytmscrap --organize-library [FOLDER] [--mode playlists|copy] [--output DIR] [--dry-run]
+  ytmscrap --export-songs [FOLDER] [--format csv|txt|json] [--output FILE] [--no-recursive]
+  ytmscrap --energy analyze [FOLDER] [--write] [--force]
+  ytmscrap --energy get SONG.flac
+  ytmscrap --energy set SONG.flac 1..5
   ytmscrap --update       Pobierz najnowszą wersję programu z GitHuba
   ytmscrap update         To samo (krótsza forma)
   ytmscrap --check        Sprawdź wymagane narzędzia
@@ -191,6 +196,9 @@ case "${1:-}" in
   --fix-genres) shift; python_helper genre_tagger.py "$@"; exit $? ;;
   --check-genres) python_helper genre_tagger.py --check-network; exit $? ;;
   --fix-rekordbox) shift; python_helper rekordbox.py "$@"; exit $? ;;
+  --organize-library) shift; python_helper dj_library.py organize "$@"; exit $? ;;
+  --export-songs) shift; python_helper dj_library.py export "$@"; exit $? ;;
+  --energy) shift; python_helper dj_library.py energy "$@"; exit $? ;;
 esac
 download_rekordbox=ask
 # Direct downloads are always attempted first; fallback is enabled by default.

@@ -42,6 +42,7 @@ HOME="$tmp/home" bash "$root/install.sh" > "$tmp/mac.log"
 [ -f "$tmp/home/.local/share/ytmscrap/genre_tagger.py" ]
 [ -f "$tmp/home/.local/share/ytmscrap/rekordbox.py" ]
 [ -f "$tmp/home/.local/share/ytmscrap/proxy_fallback.py" ]
+[ -f "$tmp/home/.local/share/ytmscrap/dj_library.py" ]
 cmp -s "$tmp/home/.local/share/ytmscrap/VERSION" "$root/VERSION"
 grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.zprofile"
 grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$tmp/home/.zshrc"
@@ -82,6 +83,7 @@ case "$url" in
   */genre_tagger.py*) src="$YTMSCRAP_REMOTE_HELPER" ;;
   */rekordbox.py*) src="$YTMSCRAP_REMOTE_REKORDBOX" ;;
   */proxy_fallback.py*) src="$YTMSCRAP_REMOTE_PROXY" ;;
+  */dj_library.py*) src="$YTMSCRAP_REMOTE_LIBRARY" ;;
   */ytmscrap*) src="$YTMSCRAP_REMOTE_FIXTURE" ;;
   *) exit 1 ;;
 esac
@@ -94,6 +96,7 @@ export YTMSCRAP_REMOTE_FIXTURE="$root/ytmscrap"
 export YTMSCRAP_REMOTE_HELPER="$root/genre_tagger.py"
 export YTMSCRAP_REMOTE_REKORDBOX="$root/rekordbox.py"
 export YTMSCRAP_REMOTE_PROXY="$root/proxy_fallback.py"
+export YTMSCRAP_REMOTE_LIBRARY="$root/dj_library.py"
 export YTMSCRAP_REMOTE_VERSION="$root/VERSION"
 rm -f "$tmp/home/.local/bin/ytmscrap"
 HOME="$tmp/home" bash "$root/install.sh" demo-user/ytmscrap > "$tmp/remote.log"
@@ -102,12 +105,14 @@ grep -Fq 'publicznego repozytorium demo-user/ytmscrap' "$tmp/remote.log"
 head -n 1 "$tmp/home/.local/share/ytmscrap/genre_tagger.py" | grep -Fq '#!/usr/bin/env python3'
 head -n 1 "$tmp/home/.local/share/ytmscrap/rekordbox.py" | grep -Fq '#!/usr/bin/env python3'
 head -n 1 "$tmp/home/.local/share/ytmscrap/proxy_fallback.py" | grep -Fq '#!/usr/bin/env python3'
+head -n 1 "$tmp/home/.local/share/ytmscrap/dj_library.py" | grep -Fq '#!/usr/bin/env python3'
 cmp -s "$tmp/home/.local/share/ytmscrap/VERSION" "$root/VERSION"
 # The installer must request a fresh URL for every downloaded source.
 grep -E 'ytmscrap\?refresh=[0-9]+' "$tmp/curl-urls.log"
 grep -E 'genre_tagger.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
 grep -E 'rekordbox.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
 grep -E 'proxy_fallback.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
+grep -E 'dj_library.py\?refresh=[0-9]+' "$tmp/curl-urls.log"
 grep -E 'VERSION\?refresh=[0-9]+' "$tmp/curl-urls.log"
 
 # Self-update should invoke the official installer without touching the system,
@@ -119,11 +124,13 @@ for mock_os in Darwin MINGW64_NT-10.0; do
   printf 'old helper\n' > "$tmp/home/.local/share/ytmscrap/genre_tagger.py"
   printf 'old rekordbox\n' > "$tmp/home/.local/share/ytmscrap/rekordbox.py"
   printf 'old proxy helper\n' > "$tmp/home/.local/share/ytmscrap/proxy_fallback.py"
+  printf 'old dj library\n' > "$tmp/home/.local/share/ytmscrap/dj_library.py"
   HOME="$tmp/home" bash "$root/ytmscrap" --update > "$tmp/update.log"
   cmp -s "$tmp/home/.local/bin/ytmscrap" "$root/ytmscrap"
   cmp -s "$tmp/home/.local/share/ytmscrap/genre_tagger.py" "$root/genre_tagger.py"
   cmp -s "$tmp/home/.local/share/ytmscrap/rekordbox.py" "$root/rekordbox.py"
   cmp -s "$tmp/home/.local/share/ytmscrap/proxy_fallback.py" "$root/proxy_fallback.py"
+  cmp -s "$tmp/home/.local/share/ytmscrap/dj_library.py" "$root/dj_library.py"
   grep -Fq 'Aktualizacja zakończona' "$tmp/update.log"
   cmp -s "$tmp/home/.local/share/ytmscrap/VERSION" "$root/VERSION"
 done

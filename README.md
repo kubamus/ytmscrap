@@ -317,3 +317,75 @@ bash install.sh
 ## Licencja
 
 MIT. Narzędzia `yt-dlp`, FFmpeg i Deno mają własne licencje i są instalowane niezależnie — nie są dołączone do repo.
+
+## DJ library: genre playlists and energy (1–5)
+
+These commands work offline after genre tagging. They do not query MusicBrainz or Discogs again.
+
+```bash
+# Estimate each song's energy (preview only)
+ytmscrap --energy analyze "$HOME/Music/DJ"
+
+# Save ratings; keep existing values by default
+ytmscrap --energy analyze "$HOME/Music/DJ" --write
+
+# Read/set a rating for one song
+ytmscrap --energy get "$HOME/Music/DJ/Artist - Song.flac"
+ytmscrap --energy set "$HOME/Music/DJ/Artist - Song.flac" 5
+
+# Force re-analysis (also replaces manual ratings)
+ytmscrap --energy analyze "$HOME/Music/DJ" --write --force
+
+# Generate M3U8 playlists grouped by genre, subgenre, and energy
+ytmscrap --organize-library "$HOME/Music/DJ" --dry-run
+ytmscrap --organize-library "$HOME/Music/DJ"
+
+# Optional copies arranged into genre folders; originals stay put
+ytmscrap --organize-library "$HOME/Music/DJ" --mode copy --output "$HOME/Music/DJ-Organized" --dry-run
+ytmscrap --organize-library "$HOME/Music/DJ" --mode copy --output "$HOME/Music/DJ-Organized"
+```
+
+The program keeps specific genres (Trap, Dance-Pop, Hard Techno, etc.) and groups
+them into practical playlists for Polish Hip-Hop, Hip-Hop, Pop, Rock, R&B, Polish Party,
+and Electronic. It does not guess a track is Polish based on a generic Trap or Pop tag.
+Tracks without a genre go to Uncategorized.
+
+The 1–5 energy score is a rough offline estimate based on three audio excerpts,
+volume, attack rate and contrast. It is **not** a trained mood/party-energy model.
+Inspect and override important tracks. Manual ratings persist unless you specify
+`--force`. FLAC uses custom `ENERGY`, `ENERGY_SCORE`, `ENERGY_SOURCE` tags,
+without re-encoding audio; WAV ratings live only in the local SQLite sidecar
+at `~/.cache/ytmscrap/energy.sqlite3`. Rekordbox may not display custom ENERGY
+tags, so the tool exports `Energy/Energy N.m3u8` playlists too.
+
+The default is playlist-only mode, which never moves audio and preserves Rekordbox
+file paths. The optional copy mode duplicates audio into genre folders and builds
+playlists pointing to the copies. It never deletes originals. Import the M3U8
+files into Rekordbox, and use Reload Tag after editing FLAC metadata.
+
+## Export a song list
+
+Create an inventory of all supported audio files in a folder. Subfolders are included by default. This does **not** change or move any songs, and no network/API requests are made.
+
+```bash
+# Spreadsheet-friendly CSV (default): song-list.csv inside the folder
+ytmscrap --export-songs "$HOME/Music/DJ"
+
+# Plain artist - title list
+ytmscrap --export-songs "$HOME/Music/DJ" --format txt
+
+# Detailed JSON, including genres and saved 1-5 energy ratings
+ytmscrap --export-songs "$HOME/Music/DJ" --format json
+
+# Select your output path and include only songs directly in the folder
+ytmscrap --export-songs "$HOME/Music/DJ" --output "$HOME/Desktop/dj-library.csv" --no-recursive
+```
+
+CSV and JSON include artist, title, album, album artist, normalized genre, genre group,
+year, BPM, key, saved energy (if set), energy source, ISRC, duration, format and
+relative path. TXT contains one `Artist - Title` per line. CSV is saved with a
+UTF-8 BOM to open Polish characters correctly in spreadsheet apps. MP3, M4A,
+FLAC, WAV, OGG/Opus, AAC and AIFF files are recognized; energy scores are
+read from the FLAC tags or the existing WAV cache. Missing fields remain blank.
+Songs with invalid tags stay in the list using their filenames and raise a
+warning. Output is rewritten on each export; audio files are never overwritten.
