@@ -213,7 +213,7 @@ ytmscrap --check-genres
 
 Instalator konfiguruje `certifi` z aktualnymi certyfikatami HTTPS. Skrypt nadal **weryfikuje certyfikaty** (nie stosuje `verify=False`). Test wyświetla konkretny powód błędu: SSL, brak DNS, timeout lub kod HTTP. Jeśli występuje błąd certyfikatu także po aktualizacji, sprawdź certyfikaty proxy/VPN i ustawienia sieci; nie wyłączaj SSL.
 
-Nieudane zapytania sieciowe **nie trafiają do cache jako brak gatunku**. Stare puste wpisy są pomijane, więc po naprawie połączenia można od razu ponowić `ytmscrap --fix-genres .`. Jeśli oba serwisy są niedostępne, program przerwie skan zamiast błędnie oznaczać wszystkie utwory jako nierozpoznane.
+Zapytania MusicBrainz zakończone HTTP 503, 429 lub innym chwilowym błędem serwera są ponawiane maksymalnie dwukrotnie z opóźnieniem. Po powtarzających się błędach przez 2 minuty używany jest Deezer zamiast kolejnych prób MusicBrainz. Nieudane zapytania sieciowe **nie trafiają do cache jako brak gatunku**. Stare puste wpisy są pomijane, więc po naprawie połączenia można od razu ponowić `ytmscrap --fix-genres .`. Jeśli oba serwisy są niedostępne, program przerwie skan zamiast błędnie oznaczać wszystkie utwory jako nierozpoznane.
 
 ## Automatyczne gatunki Genre
 
