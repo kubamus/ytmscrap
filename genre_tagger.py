@@ -108,6 +108,8 @@ class Lookup:
         except (OSError, ValueError):
             self.cache = {}
         self.last_mb = 0
+        self.mb_transient_failures = 0
+        self.mb_retry_after = 0
         self.dirty = False
         self.failed_sources = set()
         self.successful_sources = set()
@@ -116,34 +118,63 @@ class Lookup:
 
     def request(self, url, mb=False):
         host = urlparse(url).hostname or "nieznany serwer"
-        if mb:
-            remaining = 1.1 - (time.monotonic() - self.last_mb)
-            if remaining > 0:
-                time.sleep(remaining)
-            self.last_mb = time.monotonic()
-        req = Request(url, headers={"User-Agent": AGENT, "Accept": "application/json"})
-        try:
-            with urlopen(req, timeout=12, context=self.ssl_context) as response:
-                data = json.load(response)
-            if not isinstance(data, dict):
-                raise ValueError("API zwróciło nieprawidłowy format danych")
-            if data.get("error"):
-                raise ValueError(f"API zwróciło błąd: {data['error']}")
-            self.successful_sources.add(host)
-            self.failed_sources.discard(host)
-            return data
-        except (HTTPError, URLError, TimeoutError, ValueError) as error:
+        endpoint = urlparse(url).path
+        # MusicBrainz 503 can mean server overload, not an invalid request.
+        # Pause MusicBrainz temporarily if it repeatedly fails, then try Deezer.
+        if mb and time.monotonic() < self.mb_retry_after:
             self.request_failed = True
-            self.failed_sources.add(host)
-            reason = error.reason if isinstance(error, URLError) else error
-            if isinstance(error, HTTPError):
-                detail = f"HTTP {error.code} {error.reason}"
-            else:
-                detail = str(reason)
-            print(f"  [BŁĄD API] {host}: {detail}", file=sys.stderr)
-            if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in detail:
-                print("  [POMOC] Problem z certyfikatem HTTPS. Zaktualizuj ytmscrap (instaluje certifi). Nie wyłączaj weryfikacji SSL.", file=sys.stderr)
             return {}
+        req = Request(url, headers={"User-Agent": AGENT, "Accept": "application/json"})
+        attempts = 3 if mb else 1
+        for attempt in range(attempts):
+            # Apply MusicBrainz's one-request-per-second limit to every attempt.
+            if mb:
+                remaining = 1.1 - (time.monotonic() - self.last_mb)
+                if remaining > 0:
+                    time.sleep(remaining)
+                self.last_mb = time.monotonic()
+            try:
+                with urlopen(req, timeout=12, context=self.ssl_context) as response:
+                    data = json.load(response)
+                if not isinstance(data, dict):
+                    raise ValueError("API zwróciło nieprawidłowy format danych")
+                if data.get("error"):
+                    raise ValueError(f"API zwróciło błąd: {data['error']}")
+                self.successful_sources.add(host)
+                self.failed_sources.discard(host)
+                if mb:
+                    self.mb_transient_failures = 0
+                return data
+            except (HTTPError, URLError, TimeoutError, ValueError) as error:
+                transient = isinstance(error, HTTPError) and error.code in (429, 500, 502, 503, 504)
+                if mb and transient and attempt + 1 < attempts:
+                    delay = 2 ** (attempt + 1)
+                    retry_after = error.headers.get("Retry-After") if error.headers else None
+                    if retry_after is not None:
+                        try:
+                            delay = max(delay, min(60.0, float(retry_after)))
+                        except ValueError:
+                            pass
+                    print(f"  [MusicBrainz] HTTP {error.code} na {endpoint}; ponawiam za {delay:g} s", file=sys.stderr)
+                    time.sleep(delay)
+                    continue
+
+                self.request_failed = True
+                self.failed_sources.add(host)
+                if mb and transient:
+                    self.mb_transient_failures += 1
+                    if self.mb_transient_failures >= 2:
+                        self.mb_retry_after = time.monotonic() + 120
+                        print("  [MusicBrainz] Serwer wciąż niedostępny; używam Deezer przez 2 minuty.", file=sys.stderr)
+                reason = error.reason if isinstance(error, URLError) else error
+                if isinstance(error, HTTPError):
+                    detail = f"HTTP {error.code} {error.reason}"
+                else:
+                    detail = str(reason)
+                print(f"  [BŁĄD API] {host}{endpoint}: {detail}", file=sys.stderr)
+                if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in detail:
+                    print("  [POMOC] Problem z certyfikatem HTTPS. Zaktualizuj ytmscrap (instaluje certifi). Nie wyłączaj weryfikacji SSL.", file=sys.stderr)
+                return {}
 
     def musicbrainz(self, artist, title):
         safe = lambda s: re.sub(r"[^\w\s-]", " ", s).strip()
@@ -366,14 +397,19 @@ class DJLookup(Lookup):
         self.api_key = os.environ.get("LASTFM_API_KEY", "")
         self.last_by_host = {}
         self.blocked = set()
+        self.blocked_until = {}
 
     def request(self, url, mb=False):
         host = urlparse(url).hostname or ""
         if self.offline:
             return {}
         if host in self.blocked:
-            self.request_failed = True  # A blocked API is not a genuine no-genre result.
-            return {}
+            if mb and time.monotonic() >= self.blocked_until.get(host, float("inf")):
+                self.blocked.discard(host)
+                self.blocked_until.pop(host, None)
+            else:
+                self.request_failed = True  # A blocked API is not a genuine no-genre result.
+                return {}
         delay = 1.2 if mb else .65
         for retry in range(3):
             if self.max_requests and self.requests >= self.max_requests:
@@ -408,6 +444,9 @@ class DJLookup(Lookup):
                 else:
                     time.sleep(2 ** retry)
         self.blocked.add(host)
+        if mb:
+            # Give MusicBrainz a fresh chance after a short cooldown.
+            self.blocked_until[host] = time.monotonic() + 120
         return {}
 
     def lastfm(self, artist, title):

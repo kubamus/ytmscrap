@@ -45,6 +45,69 @@ class GenreTests(unittest.TestCase):
             with patch.object(lookup, "request", side_effect=AssertionError("Cache expected")):
                 self.assertEqual(lookup.find("White 2115", "California")[0], "Hip-Hop")
 
+    def test_musicbrainz_503_retries_and_recovers(self):
+        import io
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from urllib.error import HTTPError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            lookup = g.Lookup(Path(tmp) / "cache.json")
+            failed = HTTPError("https://musicbrainz.org/ws/2/recording/", 503,
+                               "Service Temporarily Unavailable", {}, None)
+            success = io.BytesIO(b'{"recordings": []}')
+            url = "https://musicbrainz.org/ws/2/recording/?query=test&fmt=json"
+            with (
+                patch.object(g, "urlopen", side_effect=[failed, success]) as call,
+                patch.object(g.time, "sleep") as sleeper,
+                redirect_stderr(StringIO()),
+            ):
+                self.assertEqual(lookup.request(url, mb=True), {"recordings": []})
+            self.assertEqual(call.call_count, 2)
+            sleeper.assert_any_call(2)
+            self.assertEqual(lookup.mb_transient_failures, 0)
+            self.assertFalse(lookup.request_failed)
+            self.assertIn("musicbrainz.org", lookup.successful_sources)
+
+    def test_musicbrainz_503_cooldown_allows_deezer_fallback(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from urllib.error import HTTPError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            lookup = g.Lookup(Path(tmp) / "cache.json")
+            url = "https://musicbrainz.org/ws/2/recording/?query=test&fmt=json"
+            def unavailable(*args, **kwargs):
+                raise HTTPError(url, 503, "Service Temporarily Unavailable", {}, None)
+
+            with (
+                patch.object(g, "urlopen", side_effect=unavailable) as call,
+                patch.object(g.time, "sleep"),
+                redirect_stderr(StringIO()),
+            ):
+                self.assertEqual(lookup.request(url, mb=True), {})
+                self.assertEqual(lookup.request(url, mb=True), {})
+                self.assertGreater(lookup.mb_retry_after, g.time.monotonic())
+                self.assertEqual(lookup.request(url, mb=True), {})
+                self.assertEqual(call.call_count, 6)
+                with patch.object(lookup, "deezer", return_value="Rap/Hip-Hop"):
+                    self.assertEqual(lookup.find("2115", "WEEKEND 2115"),
+                                     ("Rap/Hip-Hop", "Deezer"))
+
+    def test_musicbrainz_nontransient_error_is_not_retried(self):
+        from urllib.error import HTTPError
+        from contextlib import redirect_stderr
+        from io import StringIO
+        with tempfile.TemporaryDirectory() as tmp:
+            lookup = g.Lookup(Path(tmp) / "cache.json")
+            url = "https://musicbrainz.org/ws/2/recording/?query=test&fmt=json"
+            with (
+                patch.object(g, "urlopen", side_effect=HTTPError(url, 404, "Not Found", {}, None)) as call,
+                redirect_stderr(StringIO()),
+            ):
+                self.assertEqual(lookup.request(url, mb=True), {})
+            self.assertEqual(call.call_count, 1)
+
     def test_file_tags_and_audio_not_changed(self):
         with tempfile.TemporaryDirectory() as tmp:
             for ext in ("wav", "flac"):

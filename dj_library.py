@@ -19,6 +19,7 @@ import sys
 import tempfile
 import time
 
+from mutagen import MutagenError
 from mutagen.flac import FLAC
 
 from genre_tagger import normalize_genre
@@ -441,7 +442,7 @@ def cmd_export(args) -> int:
         for song in files:
             try:
                 rows.append(export_record(song, source, store))
-            except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
+            except (OSError, ValueError, KeyError, MutagenError, subprocess.CalledProcessError) as exc:
                 failures += 1
                 print(f"[EXPORT ERROR] {song}: {exc}", file=sys.stderr)
                 # Include the file in the inventory even when its tags are corrupt.

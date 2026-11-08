@@ -54,6 +54,37 @@ class GenresTest(unittest.TestCase):
                 finally:
                     lookup.save()
 
+    def test_musicbrainz_cooldown_rechecks_after_two_minutes(self):
+        from urllib.error import HTTPError
+        from contextlib import redirect_stderr
+        from io import StringIO
+
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(Path, "home", return_value=Path(temp)):
+                lookup = t.DJLookup(max_requests=20)
+                try:
+                    now = [1000.0]
+                    def clock():
+                        return now[0]
+                    url = "https://musicbrainz.org/ws/2/recording/?query=test&fmt=json"
+                    def unavailable(*args, **kwargs):
+                        raise HTTPError(url, 503, "Service Temporarily Unavailable", {}, None)
+                    with (
+                        patch.object(t.time, "monotonic", side_effect=clock),
+                        patch.object(t.time, "sleep"),
+                        patch.object(t, "urlopen", side_effect=unavailable) as calls,
+                        redirect_stderr(StringIO()),
+                    ):
+                        self.assertEqual(lookup.request(url, mb=True), {})
+                        self.assertEqual(calls.call_count, 3)
+                        self.assertEqual(lookup.request(url, mb=True), {})
+                        self.assertEqual(calls.call_count, 3)
+                        now[0] += 121
+                        self.assertEqual(lookup.request(url, mb=True), {})
+                        self.assertEqual(calls.call_count, 6)
+                finally:
+                    lookup.save()
+
     def test_flac_audio_is_not_reencoded(self):
         with tempfile.TemporaryDirectory() as temp:
             song = Path(temp) / "DJ - Track.flac"
